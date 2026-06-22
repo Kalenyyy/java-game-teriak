@@ -1,13 +1,17 @@
 package com.aduteriak;
 
+import java.util.LinkedList;
+import java.util.Queue;
+
 public class GameState {
-    public static String player1Name = "";
-    public static String player2Name = "";
-    public static double player1Score = 0;
-    public static double player2Score = 0;
+    // Syarat ADT & List: Menyimpan semua pemain yang ikut
+    public static LinkedList<Player> allPlayers = new LinkedList<>();
+
+    // Syarat Queue: Antrean untuk giliran teriak
+    public static Queue<Player> turnQueue = new LinkedList<>();
 
     public static void reset() {
-        player1Score = 0;
-        player2Score = 0;
+        allPlayers.clear();
+        turnQueue.clear();
     }
 }
