@@ -16,12 +16,16 @@ public class MainMenuPanel extends JPanel {
         btn2P.setFont(new Font("Arial", Font.BOLD, 25));
         btn2P.addActionListener(e -> parent.showView("INPUT_2P"));
 
+        JButton btnTournament = new JButton("TOURNAMENT MODE");
+        btnTournament.setFont(new Font("Arial", Font.BOLD, 25));
+        btnTournament.addActionListener(e -> parent.showView("INPUT_TOURNAMENT"));
+
         JButton btnExit = new JButton("KELUAR");
         btnExit.addActionListener(e -> System.exit(0));
 
-        JPanel box = new JPanel(new GridLayout(3, 1, 10, 10));
+        JPanel box = new JPanel(new GridLayout(4, 1, 10, 10));
         box.setOpaque(false);
-        box.add(title); box.add(btn2P); box.add(btnExit);
+        box.add(title); box.add(btn2P); box.add(btnTournament); box.add(btnExit);
         add(box);
     }
 }
