@@ -57,6 +57,20 @@ public class MainFrame extends JFrame {
         this.requestFocus();
     }
 
+    public void startDuel() {
+        // Hapus DuelPanel lama jika ada (agar mic & timer lama tidak menumpuk)
+        Component[] components = mainPanel.getComponents();
+        for (Component c : components) {
+            if (c instanceof GamePanel) mainPanel.remove(c);
+        }
+
+        mainPanel.add(new GamePanel(this), "DUEL_SCREEN");
+        showView("DUEL_SCREEN");
+
+        // Pastikan focus kembali ke panel duel (agar key binding SPACE aktif)
+        this.requestFocus();
+    }
+
     public void showResult() {
         // Hapus ResultPanel lama jika ada
         Component[] components = mainPanel.getComponents();
