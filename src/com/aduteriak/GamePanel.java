@@ -59,7 +59,7 @@ public class GamePanel extends JPanel {
     private int turnIndex = 0;
 
     // ---- Akuisisi mikrofon (1 device, dipakai bergantian antar pemain) ----
-    private AudioCapture mic;
+    private MicrophoneMeter mic;
     private boolean micActive = false;
     private boolean listening = false; // true hanya saat fase SCREAMING (setelah "MULAIIII!")
 
@@ -265,8 +265,7 @@ public class GamePanel extends JPanel {
     //  MIKROFON (akuisisi didelegasikan ke class AudioCapture)
     // =========================================================
     private void setupMicrophone() {
-        AudioFormat format = new AudioFormat(44100f, 16, 1, true, false);
-        mic = new AudioCapture(format);
+        mic = new MicrophoneMeter();
     }
 
     private void toggleMicrophone() {
@@ -397,7 +396,7 @@ public class GamePanel extends JPanel {
         if (screamTimer != null) screamTimer.stop();
         screamTimer = new Timer(100, e -> {
             screamTicks++;
-            double score = mic.getScore();
+            double score = mic.getCurrentScore();
             if (score > peakScore) peakScore = score;
 
             if (screamTicks * 100 >= SCREAM_DURATION_MS) {
@@ -466,7 +465,7 @@ public class GamePanel extends JPanel {
     //  LOOP RENDER (60 FPS): posisi lerp, waveform, shake, partikel
     // =========================================================
     private void tickRender() {
-        double activeScore = (micActive && listening) ? mic.getScore() : 0;
+        double activeScore = (micActive && listening) ? mic.getCurrentScore() : 0;
 
         if (currentPlayer != null && listening) {
             if (isTopPlayer(currentPlayer)) {
