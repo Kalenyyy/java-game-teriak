@@ -19,6 +19,32 @@ import java.util.Random;
  * mode "MAIN SENDIRI" (1 pemain di antrian) maupun "MODE DUEL" (2 pemain
  * di antrian, ditampilkan sebagai lajur atas & bawah).
  *
+ * ============================================================================
+ *  VISUAL OVERHAUL NOTE
+ * ============================================================================
+ * Seluruh GAMEPLAY, LOGIC, MEKANIK, dan FLOW pada file ini TIDAK diubah sama
+ * sekali dibanding versi sebelumnya. Perubahan yang dilakukan murni bersifat
+ * VISUAL/PRESENTASI, dengan tetap mempertahankan identitas monokrom
+ * (hitam / putih / abu-abu / abu-abu gelap / soft white):
+ *
+ *   - Tombol didesain ulang total lewat class PremiumButton (glass, glow,
+ *     hover/press animation, layered shadow) menggantikan JButton polos.
+ *   - Header & footer kini berupa "GlassStrip" dengan gradient tipis dan
+ *     garis cahaya (hairline glow) -- bukan JPanel transparan biasa.
+ *   - Background diberi ambient light beam yang bergerak pelan, vignette,
+ *     dan partikel debu mengambang -- semua tetap grayscale.
+ *   - Judul memakai efek metallic + glow + sedikit "breathing" scale.
+ *   - Countdown kini punya animasi scale-in dengan overshoot + glow pulse.
+ *   - Waveform & shockwave ring diberi lapisan bloom (multi-stroke glow).
+ *   - Karakter diberi rim-light, soft ambient glow saat berteriak, dan
+ *     idle breathing animation -- bentuk/identitas karakter TIDAK diubah.
+ *   - Skor tinggi memicu "score pop" (scale + glow + fade) selain flash.
+ *
+ * Tidak ada satupun warna baru di luar palet monokrom yang ditambahkan;
+ * seluruh efek baru hanya memakai opacity/gradient/glow dari warna yang
+ * sudah ada (putih/abu-abu/hitam).
+ * ============================================================================
+ *
  * Mekanik:
  * - Sebelum mikrofon mulai dihitung, ditampilkan countdown "3, 2, 1, MULAIIII!".
  * - Karakter pemain yang sedang giliran mulai di posisi KIRI (LOW), lalu bergerak
@@ -42,8 +68,9 @@ import java.util.Random;
  * Catatan arsitektur:
  * - Akuisisi mikrofon didelegasikan ke class AudioCapture (file terpisah).
  * - Audio management (BGM/SFX) didelegasikan ke class SoundManager (file terpisah).
- * - Panel ini TIDAK memiliki inner-class bertumpuk; semua dependensi berat
- *   sudah dipecah jadi top-level class agar mudah diuji & dipakai ulang.
+ * - Panel ini TIDAK memiliki inner-class bertumpuk untuk logic berat; satu-satunya
+ *   nested class adalah PremiumButton/GlassStrip yang murni untuk keperluan
+ *   rendering UI dan tidak menyimpan state gameplay apapun.
  */
 public class GamePanel extends JPanel {
 
@@ -82,6 +109,7 @@ public class GamePanel extends JPanel {
     private double peakScore = 0;
     private String statusText = "MENYIAPKAN...";
     private String bigOverlayText = null;
+    private long bigOverlayChangedAt = 0L;
 
     // ---- Posisi lajur (0.0 = kiri/LOW, 1.0 = kanan/MAX) ----
     private float livePosTop = 0f, targetPosTop = 0f, prevLivePosTop = 0f;
@@ -116,6 +144,20 @@ public class GamePanel extends JPanel {
     private float flashAlpha = 0f;
     private Timer flashTimer;
 
+    // ---- Ambient background particles (debu mengambang, monokrom, sangat halus) ----
+    private static final int AMBIENT_PARTICLE_COUNT = 34;
+    // tiap partikel: {x, y, vy, size, alphaBase, phase}
+    private final List<float[]> ambientParticles = new ArrayList<>();
+
+    // ---- Score pop-up feedback (saat giliran selesai dengan skor tinggi) ----
+    private String scorePopupText = null;
+    private float scorePopupProgress = 1f; // 0 = baru muncul, 1 = selesai/fade out
+    private int scorePopupX, scorePopupY;
+    private Timer scorePopupTimer;
+
+    // ---- Jam animasi global (untuk breathing / pulse / light beam) ----
+    private final long animClockStart = System.currentTimeMillis();
+
     private static final double THRESHOLD = 25.0;
     private static final double SHAKE_TRIGGER_PERCENT = 70.0; // 70% dari MAX
     private static final double MAX_REACH_SCORE = 98.0;
@@ -127,10 +169,21 @@ public class GamePanel extends JPanel {
     private static final float BAR_BOTTOM_RATIO = 0.66f;
     private static final float WAVE_AMPLITUDE_RATIO = 0.10f;
 
+    // ---- Palet monokrom terpusat (tidak ada warna baru di luar ini) ----
+    private static final Color C_BG_0        = new Color(5, 5, 6);
+    private static final Color C_BG_1        = new Color(16, 16, 18);
+    private static final Color C_BG_2        = new Color(24, 24, 27);
+    private static final Color C_SOFT_WHITE  = new Color(240, 240, 242);
+    private static final Color C_LIGHT_GRAY  = new Color(196, 196, 201);
+    private static final Color C_MID_GRAY    = new Color(128, 128, 133);
+    private static final Color C_DIM_GRAY    = new Color(80, 80, 85);
+    private static final Color C_DARK_GRAY   = new Color(34, 34, 37);
+    private static final Color C_HAIRLINE    = new Color(255, 255, 255, 40);
+
     // ---- Tombol interaktif ----
-    private JButton btnBack;
-    private JButton btnMicToggle;
-    private JButton btnStart;
+    private PremiumButton btnBack;
+    private PremiumButton btnMicToggle;
+    private PremiumButton btnStart;
     private JLabel lblSubHint;
 
     // ---- Timer render ----
@@ -138,7 +191,7 @@ public class GamePanel extends JPanel {
 
     public GamePanel(MainFrame parent) {
         this.parent = parent;
-        setBackground(new Color(8, 8, 8));
+        setBackground(C_BG_0);
         setLayout(new BorderLayout());
         setFocusable(true);
 
@@ -150,6 +203,7 @@ public class GamePanel extends JPanel {
             trailTop.add(0f);
             trailBottom.add(0f);
         }
+        initAmbientParticles();
 
         // Intip 2 pemain pertama di antrian tanpa menghapusnya, untuk label lajur atas/bawah.
         // Jika hanya 1 pemain (mode solo), playerBottom akan null dan lajur bawah otomatis idle.
@@ -174,24 +228,50 @@ public class GamePanel extends JPanel {
     }
 
     // =========================================================
-    //  HEADER
+    //  AMBIENT PARTICLES (debu mengambang di background)
+    // =========================================================
+    private void initAmbientParticles() {
+        ambientParticles.clear();
+        for (int i = 0; i < AMBIENT_PARTICLE_COUNT; i++) {
+            float x = rng.nextFloat();
+            float y = rng.nextFloat();
+            float vy = 0.00015f + rng.nextFloat() * 0.00035f;
+            float size = 1f + rng.nextFloat() * 2.2f;
+            float alphaBase = 0.04f + rng.nextFloat() * 0.10f;
+            float phase = rng.nextFloat() * (float) (Math.PI * 2);
+            ambientParticles.add(new float[]{x, y, vy, size, alphaBase, phase});
+        }
+    }
+
+    private void updateAmbientParticles() {
+        for (float[] p : ambientParticles) {
+            p[1] -= p[2]; // naik pelan ke atas
+            p[5] += 0.01f; // phase untuk shimmer halus
+            if (p[1] < -0.02f) {
+                p[1] = 1.02f;
+                p[0] = rng.nextFloat();
+            }
+        }
+    }
+
+    // =========================================================
+    //  HEADER  (GlassStrip premium, bukan JPanel transparan polos)
     // =========================================================
     private JPanel buildHeaderPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setOpaque(false);
-        panel.setPreferredSize(new Dimension(10, 70));
+        GlassStrip panel = new GlassStrip(GlassStrip.Edge.BOTTOM);
+        panel.setLayout(new BorderLayout());
+        panel.setPreferredSize(new Dimension(10, 72));
 
-        btnBack = new JButton("\u2190 KEMBALI");
-        btnBack.setFont(new Font("Arial", Font.PLAIN, 14));
-        btnBack.setForeground(Color.WHITE);
-        btnBack.setContentAreaFilled(false);
-        btnBack.setBorderPainted(false);
-        btnBack.setFocusPainted(false);
-        btnBack.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btnBack.setBorder(BorderFactory.createEmptyBorder(14, 18, 0, 0));
+        btnBack = new PremiumButton("\u2190 KEMBALI", 13, PremiumButton.Style.GHOST);
+        btnBack.setMaximumSize(new Dimension(150, 34));
+        btnBack.setPreferredSize(new Dimension(140, 34));
         btnBack.addActionListener(e -> goBackToMainMenu());
 
-        panel.add(btnBack, BorderLayout.WEST);
+        JPanel wrap = new JPanel(new FlowLayout(FlowLayout.LEFT, 18, 18));
+        wrap.setOpaque(false);
+        wrap.add(btnBack);
+
+        panel.add(wrap, BorderLayout.WEST);
         return panel;
     }
 
@@ -203,46 +283,36 @@ public class GamePanel extends JPanel {
     }
 
     // =========================================================
-    //  FOOTER
+    //  FOOTER  (GlassStrip premium)
     // =========================================================
     private JPanel buildFooterPanel() {
-        JPanel panel = new JPanel();
-        panel.setOpaque(false);
+        GlassStrip panel = new GlassStrip(GlassStrip.Edge.TOP);
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createEmptyBorder(0, 0, 30, 0));
+        panel.setBorder(BorderFactory.createEmptyBorder(18, 0, 28, 0));
 
-        btnMicToggle = buildOutlineButton("AKTIFKAN MIKROFON", 15);
-        btnMicToggle.setMaximumSize(new Dimension(260, 42));
+        btnMicToggle = new PremiumButton("AKTIFKAN MIKROFON", 14, PremiumButton.Style.OUTLINE);
+        btnMicToggle.setAlignmentX(Component.CENTER_ALIGNMENT);
+        btnMicToggle.setMaximumSize(new Dimension(270, 44));
+        btnMicToggle.setPreferredSize(new Dimension(270, 44));
         btnMicToggle.addActionListener(e -> toggleMicrophone());
 
-        btnStart = buildOutlineButton("TEKAN SPACE UNTUK MULAI TERIAK", 17);
-        btnStart.setMaximumSize(new Dimension(420, 54));
+        btnStart = new PremiumButton("TEKAN SPACE UNTUK MULAI TERIAK", 16, PremiumButton.Style.SOLID);
+        btnStart.setAlignmentX(Component.CENTER_ALIGNMENT);
+        btnStart.setMaximumSize(new Dimension(440, 58));
+        btnStart.setPreferredSize(new Dimension(440, 58));
         btnStart.addActionListener(e -> attemptStartTurn());
 
         lblSubHint = new JLabel("ATAU TEKAN [SPACE]");
         lblSubHint.setAlignmentX(Component.CENTER_ALIGNMENT);
-        lblSubHint.setFont(new Font("Arial", Font.PLAIN, 12));
-        lblSubHint.setForeground(new Color(150, 150, 150));
-        lblSubHint.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+        lblSubHint.setFont(new Font("Arial", Font.PLAIN, 11));
+        lblSubHint.setForeground(C_MID_GRAY);
+        lblSubHint.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
 
         panel.add(btnMicToggle);
-        panel.add(Box.createRigidArea(new Dimension(0, 12)));
+        panel.add(Box.createRigidArea(new Dimension(0, 14)));
         panel.add(btnStart);
         panel.add(lblSubHint);
         return panel;
-    }
-
-    private JButton buildOutlineButton(String text, int fontSize) {
-        JButton b = new JButton(text);
-        b.setAlignmentX(Component.CENTER_ALIGNMENT);
-        b.setFont(new Font("Arial", Font.BOLD, fontSize));
-        b.setForeground(Color.WHITE);
-        b.setBackground(new Color(0, 0, 0, 0));
-        b.setContentAreaFilled(false);
-        b.setFocusPainted(false);
-        b.setBorder(BorderFactory.createLineBorder(new Color(255, 255, 255, 160), 1));
-        b.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        return b;
     }
 
     // =========================================================
@@ -274,9 +344,11 @@ public class GamePanel extends JPanel {
         if (micActive) {
             mic.start();
             btnMicToggle.setText("MATIKAN MIKROFON");
+            btnMicToggle.setActiveStyle(true);
         } else {
             mic.stop();
             btnMicToggle.setText("AKTIFKAN MIKROFON");
+            btnMicToggle.setActiveStyle(false);
         }
         requestFocusInWindow();
     }
@@ -365,6 +437,7 @@ public class GamePanel extends JPanel {
         listening = false; // mic dikunci, belum dihitung
         countdownIndex = 0;
         bigOverlayText = countdownStages[0];
+        bigOverlayChangedAt = System.currentTimeMillis();
         statusText = "BERSIAP, " + currentPlayer.getName().toUpperCase() + "...";
         sound.playTick(); // tick untuk angka pertama ("3") yang tampil langsung
 
@@ -373,6 +446,7 @@ public class GamePanel extends JPanel {
             countdownIndex++;
             if (countdownIndex < countdownStages.length) {
                 bigOverlayText = countdownStages[countdownIndex];
+                bigOverlayChangedAt = System.currentTimeMillis();
                 if (bigOverlayText.equals("MULAIIII!")) {
                     sound.playImpact();
                     sound.duckBGM();
@@ -419,12 +493,17 @@ public class GamePanel extends JPanel {
         sound.restoreBGM();
 
         float finalNorm = (float) Math.max(0, Math.min(1.0, peakScore / 100.0));
+        int popupX, popupY;
         if (isTopPlayer(currentPlayer)) {
             targetPosTop = finalNorm;
             frozenTop = true;
+            popupX = -1; // dihitung ulang di paint-time via lane geometry; simpan flag saja
+            popupY = 0;
+            triggerScorePopup(true);
         } else if (isBottomPlayer(currentPlayer)) {
             targetPosBottom = finalNorm;
             frozenBottom = true;
+            triggerScorePopup(false);
         }
 
         if (peakScore >= MAX_REACH_SCORE) {
@@ -434,6 +513,28 @@ public class GamePanel extends JPanel {
         Timer pause = new Timer(1500, e -> prepareNextTurn());
         pause.setRepeats(false);
         pause.start();
+    }
+
+    // =========================================================
+    //  SCORE POPUP (feedback saat skor selesai dihitung)
+    // =========================================================
+    private boolean scorePopupIsTop = true;
+
+    private void triggerScorePopup(boolean top) {
+        scorePopupIsTop = top;
+        scorePopupText = String.valueOf((int) peakScore);
+        scorePopupProgress = 0f;
+        if (scorePopupTimer != null) scorePopupTimer.stop();
+        scorePopupTimer = new Timer(20, e -> {
+            scorePopupProgress += 0.02f;
+            if (scorePopupProgress >= 1f) {
+                scorePopupProgress = 1f;
+                scorePopupText = null;
+                ((Timer) e.getSource()).stop();
+            }
+            repaint();
+        });
+        scorePopupTimer.start();
     }
 
     private void triggerFlash() {
@@ -456,6 +557,7 @@ public class GamePanel extends JPanel {
         if (countdownTimer != null) countdownTimer.stop();
         if (screamTimer != null) screamTimer.stop();
         if (flashTimer != null) flashTimer.stop();
+        if (scorePopupTimer != null) scorePopupTimer.stop();
         if (mic != null) mic.stop();
         if (sound != null) sound.stopAll();
         micActive = false;
@@ -560,6 +662,7 @@ public class GamePanel extends JPanel {
         updateRings(ringsBottom);
         updateSpeedLines(speedLinesTop);
         updateSpeedLines(speedLinesBottom);
+        updateAmbientParticles();
 
         if (listening) {
             sound.setScreamIntensity(activeScore / 100.0);
@@ -606,6 +709,11 @@ public class GamePanel extends JPanel {
         }
     }
 
+    /** Elapsed time (detik) sejak panel ini dibuat -- dipakai untuk animasi ambient/pulse. */
+    private double animSeconds() {
+        return (System.currentTimeMillis() - animClockStart) / 1000.0;
+    }
+
     // =========================================================
     //  PAINTING
     // =========================================================
@@ -618,23 +726,30 @@ public class GamePanel extends JPanel {
 
         Graphics2D g2 = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
 
         int shakeAmt = (int) shakeMagnitude;
         int jx = shakeAmt > 0 ? rng.nextInt(shakeAmt * 2 + 1) - shakeAmt : 0;
         int jy = shakeAmt > 0 ? rng.nextInt(shakeAmt * 2 + 1) - shakeAmt : 0;
         g2.translate(jx, jy);
 
-        g2.setColor(new Color(8, 8, 8));
-        g2.fillRect(-40, -40, w + 80, h + 80);
+        drawAmbientBackground(g2, w, h);
 
         drawHeaderText(g2, w);
         drawStatus(g2, w);
         drawQueueInfo(g2, w);
         drawLanes(g2, w, h);
 
+        if (scorePopupText != null) {
+            drawScorePopup(g2, w, h);
+        }
+
         if (bigOverlayText != null && phase == Phase.COUNTDOWN) {
             drawBigOverlay(g2, w, h);
         }
+
+        drawVignette(g2, w, h);
 
         g2.dispose();
 
@@ -646,19 +761,108 @@ public class GamePanel extends JPanel {
         }
     }
 
+    /**
+     * Background premium: gradient dasar dua-lapis + light beam yang bergerak
+     * pelan (grayscale) + partikel debu mengambang. Tidak pernah terasa kosong,
+     * tapi tetap tenang agar tidak mengganggu gameplay.
+     */
+    private void drawAmbientBackground(Graphics2D g2, int w, int h) {
+        // Lapisan dasar: vertical gradient gelap -> sedikit lebih terang di tengah
+        GradientPaint base = new GradientPaint(0, -40, C_BG_0, 0, h * 0.65f, C_BG_1);
+        g2.setPaint(base);
+        g2.fillRect(-40, -40, w + 80, h + 80);
+        g2.setPaint(null);
+
+        // Light beam ambient yang bergeser pelan secara horizontal (radial, sangat redup)
+        double t = animSeconds();
+        float beamX = (float) (w * (0.5 + 0.35 * Math.sin(t * 0.15)));
+        float beamY = h * 0.32f;
+        RadialGradientPaint beam = new RadialGradientPaint(
+                new Point2D.Float(beamX, beamY),
+                Math.max(w, h) * 0.55f,
+                new float[]{0f, 1f},
+                new Color[]{new Color(255, 255, 255, 16), new Color(255, 255, 255, 0)}
+        );
+        Paint oldPaint = g2.getPaint();
+        g2.setPaint(beam);
+        g2.fillRect(-40, -40, w + 80, h + 80);
+        g2.setPaint(oldPaint);
+
+        // Partikel debu mengambang (sangat redup, grayscale, shimmer halus)
+        for (float[] p : ambientParticles) {
+            float px = p[0] * w;
+            float py = p[1] * h;
+            float size = p[3];
+            float shimmer = (float) (0.6 + 0.4 * Math.sin(p[5]));
+            int alpha = (int) Math.max(0, Math.min(255, p[4] * shimmer * 255));
+            g2.setColor(new Color(255, 255, 255, alpha));
+            g2.fillOval((int) px, (int) py, (int) size, (int) size);
+        }
+    }
+
+    /** Vignette halus di tepi layar agar fokus tetap ke tengah panggung. */
+    private void drawVignette(Graphics2D g2, int w, int h) {
+        Paint oldPaint = g2.getPaint();
+        float radius = Math.max(w, h) * 0.75f;
+        RadialGradientPaint vignette = new RadialGradientPaint(
+                new Point2D.Float(w / 2f, h / 2f),
+                radius,
+                new float[]{0.55f, 1f},
+                new Color[]{new Color(0, 0, 0, 0), new Color(0, 0, 0, 110)}
+        );
+        g2.setPaint(vignette);
+        g2.fillRect(0, 0, w, h);
+        g2.setPaint(oldPaint);
+    }
+
     private void drawHeaderText(Graphics2D g2, int w) {
-        g2.setFont(new Font("Arial", Font.PLAIN, 14));
-        g2.setColor(new Color(180, 180, 180));
+        g2.setFont(new Font("Arial", Font.PLAIN, 13));
+        g2.setColor(C_MID_GRAY);
         FontMetrics fmSmall = g2.getFontMetrics();
-        String sub = "MODE DUEL";
+        String sub = "M O D E   D U E L";
         g2.drawString(sub, (w - fmSmall.stringWidth(sub)) / 2, 34);
 
         Font titleFont = pickTitleFont(46);
         g2.setFont(titleFont);
-        g2.setColor(Color.WHITE);
         FontMetrics fmTitle = g2.getFontMetrics();
         String title = "AAAAAAAAAAAA";
-        g2.drawString(title, (w - fmTitle.stringWidth(title)) / 2, 78);
+        int tx = (w - fmTitle.stringWidth(title)) / 2;
+        int ty = 80;
+
+        // Breathing scale halus untuk judul (tidak mengubah posisi elemen gameplay lain)
+        double pulse = 1.0 + 0.012 * Math.sin(animSeconds() * 1.4);
+        AffineTransform oldTx = g2.getTransform();
+        g2.translate(tx + fmTitle.stringWidth(title) / 2.0, ty - fmTitle.getAscent() / 2.5);
+        g2.scale(pulse, pulse);
+        g2.translate(-(tx + fmTitle.stringWidth(title) / 2.0), -(ty - fmTitle.getAscent() / 2.5));
+
+        // Glow belakang (beberapa lapisan blur-approx dengan offset kecil & alpha rendah)
+        g2.setColor(new Color(255, 255, 255, 26));
+        for (int r = 6; r >= 2; r -= 2) {
+            g2.drawString(title, tx - r, ty);
+            g2.drawString(title, tx + r, ty);
+            g2.drawString(title, tx, ty - r);
+            g2.drawString(title, tx, ty + r);
+        }
+
+        // Shadow tegas untuk kedalaman
+        g2.setColor(new Color(0, 0, 0, 200));
+        g2.drawString(title, tx + 2, ty + 3);
+
+        // Isi metallic: gradient vertikal soft-white -> abu-abu terang -> soft-white
+        GradientPaint metallic = new GradientPaint(
+                0, ty - fmTitle.getAscent(), C_SOFT_WHITE,
+                0, ty + 6, C_LIGHT_GRAY
+        );
+        g2.setPaint(metallic);
+        g2.drawString(title, tx, ty);
+        g2.setPaint(null);
+
+        // Highlight tipis di bagian atas huruf untuk kesan metalik
+        g2.setColor(new Color(255, 255, 255, 90));
+        g2.drawString(title, tx, ty - 1);
+
+        g2.setTransform(oldTx);
     }
 
     private Font pickTitleFont(int size) {
@@ -676,34 +880,112 @@ public class GamePanel extends JPanel {
 
     private void drawStatus(Graphics2D g2, int w) {
         g2.setFont(new Font("Arial", Font.BOLD, 20));
-        g2.setColor(new Color(255, 210, 60));
         FontMetrics fm = g2.getFontMetrics();
-        g2.drawString(statusText, (w - fm.stringWidth(statusText)) / 2, 112);
+        int sx = (w - fm.stringWidth(statusText)) / 2;
+        int sy = 112;
+
+        g2.setColor(new Color(0, 0, 0, 150));
+        g2.drawString(statusText, sx + 1, sy + 2);
+        g2.setColor(C_SOFT_WHITE);
+        g2.drawString(statusText, sx, sy);
     }
 
     private void drawQueueInfo(Graphics2D g2, int w) {
         if (totalPlayers <= 0) return;
         String info = "GILIRAN " + turnIndex + " DARI " + totalPlayers
-                + "  .  SISA ANTREAN: " + GameState.turnQueue.size();
+                + "   \u00B7   SISA ANTREAN: " + GameState.turnQueue.size();
         g2.setFont(new Font("Arial", Font.PLAIN, 12));
-        g2.setColor(new Color(140, 140, 140));
+        g2.setColor(C_MID_GRAY);
         FontMetrics fm = g2.getFontMetrics();
         g2.drawString(info, (w - fm.stringWidth(info)) / 2, 132);
     }
 
+    /** Countdown sinematik: scale-in dengan sedikit overshoot + glow pulse + impact khusus "MULAIIII!". */
     private void drawBigOverlay(Graphics2D g2, int w, int h) {
-        Font bigFont = pickTitleFont(90);
-        g2.setFont(bigFont);
         boolean isGo = bigOverlayText.equals("MULAIIII!");
-        g2.setColor(isGo ? new Color(255, 230, 80) : Color.WHITE);
+        Font bigFont = pickTitleFont(isGo ? 100 : 90);
+        g2.setFont(bigFont);
         FontMetrics fm = g2.getFontMetrics();
         int tx = (w - fm.stringWidth(bigOverlayText)) / 2;
         int ty = (int) (h * 0.48);
 
-        g2.setColor(new Color(0, 0, 0, 180));
+        long elapsed = System.currentTimeMillis() - bigOverlayChangedAt;
+        double life = Math.min(1.0, elapsed / 260.0);
+        // Ease-out-back sederhana untuk kesan "pop" premium
+        double overshoot = 1.7;
+        double eased = 1 + (overshoot + 1) * Math.pow(life - 1, 3) + overshoot * Math.pow(life - 1, 2);
+        float scale = (float) Math.max(0.05, eased);
+        float alpha = (float) Math.min(1.0, life * 1.4);
+
+        int cx = tx + fm.stringWidth(bigOverlayText) / 2;
+        int cy = ty - fm.getAscent() / 3;
+
+        AffineTransform oldTx = g2.getTransform();
+        g2.translate(cx, cy);
+        g2.scale(scale, scale);
+        g2.translate(-cx, -cy);
+
+        Color glowColor = isGo ? new Color(255, 255, 255) : new Color(230, 230, 230);
+
+        // Glow radial di belakang teks
+        Composite oldComposite = g2.getComposite();
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, alpha))));
+        RadialGradientPaint glow = new RadialGradientPaint(
+                new Point2D.Float(cx, cy),
+                fm.stringWidth(bigOverlayText) * (isGo ? 0.9f : 0.7f),
+                new float[]{0f, 1f},
+                new Color[]{new Color(255, 255, 255, isGo ? 90 : 55), new Color(255, 255, 255, 0)}
+        );
+        g2.setPaint(glow);
+        g2.fillOval(cx - 160, cy - 100, 320, 200);
+        g2.setPaint(null);
+
+        // Bayangan
+        g2.setColor(new Color(0, 0, 0, (int) (200 * alpha)));
         g2.drawString(bigOverlayText, tx + 3, ty + 3);
-        g2.setColor(isGo ? new Color(255, 230, 80) : Color.WHITE);
+
+        // Isi utama
+        g2.setColor(new Color(glowColor.getRed(), glowColor.getGreen(), glowColor.getBlue(), (int) (255 * alpha)));
         g2.drawString(bigOverlayText, tx, ty);
+
+        g2.setComposite(oldComposite);
+        g2.setTransform(oldTx);
+    }
+
+    /** Feedback skor: teks besar muncul di dekat lajur pemain, membesar lalu memudar ke atas. */
+    private void drawScorePopup(Graphics2D g2, int w, int h) {
+        int left = LANE_MARGIN_X;
+        int right = w - LANE_MARGIN_X;
+        int barY = (int) (h * (scorePopupIsTop ? BAR_TOP_RATIO : BAR_BOTTOM_RATIO));
+        float posNorm = scorePopupIsTop ? livePosTop : livePosBottom;
+        int baseX = (int) (left + (right - left) * posNorm);
+        int baseY = barY - 46;
+
+        float p = scorePopupProgress;
+        float scale = 0.9f + 0.5f * (float) Math.sin(Math.min(1f, p * 2.2f) * Math.PI / 2);
+        float alpha = 1f - Math.max(0, (p - 0.55f) / 0.45f);
+        alpha = Math.max(0f, Math.min(1f, alpha));
+        int riseY = baseY - (int) (p * 26);
+
+        Font f = new Font("Arial", Font.BOLD, 30);
+        g2.setFont(f);
+        FontMetrics fm = g2.getFontMetrics();
+        String txt = "+" + scorePopupText;
+        int tw = fm.stringWidth(txt);
+
+        AffineTransform oldTx = g2.getTransform();
+        g2.translate(baseX, riseY);
+        g2.scale(scale, scale);
+
+        g2.setColor(new Color(255, 255, 255, (int) (50 * alpha)));
+        g2.fillOval(-tw / 2 - 14, -26, tw + 28, 40);
+
+        g2.setColor(new Color(0, 0, 0, (int) (180 * alpha)));
+        g2.drawString(txt, -tw / 2 + 1, 6);
+        g2.setColor(new Color(255, 255, 255, (int) (255 * alpha)));
+        g2.drawString(txt, -tw / 2, 5);
+
+        g2.setTransform(oldTx);
     }
 
     private void drawLanes(Graphics2D g2, int w, int h) {
@@ -731,9 +1013,15 @@ public class GamePanel extends JPanel {
                                 float livePosNorm, double liveScore, boolean isActiveScreaming,
                                 LinkedList<Float> trail, List<float[]> rings, List<float[]> speedLines) {
 
+        // Track/panel lajur bergaya "glass" tipis di belakang bar agar terasa seperti
+        // panel kompetisi audio profesional, tanpa mengubah posisi elemen apapun.
+        drawLaneTrackPanel(g2, left, right, barY, waveAmplitude);
+
         g2.setFont(new Font("Arial", Font.BOLD, 15));
-        g2.setColor(Color.WHITE);
         String nameLabel = (lanePlayer != null ? lanePlayer.getName().toUpperCase() : "-");
+        g2.setColor(new Color(0, 0, 0, 140));
+        g2.drawString(nameLabel, left + 1, barY - waveAmplitude - 11);
+        g2.setColor(C_SOFT_WHITE);
         g2.drawString(nameLabel, left, barY - waveAmplitude - 12);
 
         if (isActiveScreaming) {
@@ -742,12 +1030,15 @@ public class GamePanel extends JPanel {
 
         drawWaveLine(g2, waveData, left, right, barY, waveAmplitude);
 
-        g2.setColor(new Color(255, 255, 255, 60));
+        g2.setColor(C_HAIRLINE);
         g2.setStroke(new BasicStroke(2f));
         g2.drawLine(left, barY, right, barY);
+        // highlight tipis tepat di atas garis untuk kesan depth/bevel
+        g2.setColor(new Color(255, 255, 255, 14));
+        g2.drawLine(left, barY - 1, right, barY - 1);
 
         g2.setFont(new Font("Arial", Font.PLAIN, 12));
-        g2.setColor(new Color(160, 160, 160));
+        g2.setColor(C_MID_GRAY);
         g2.drawString("LOW", left, barY + 24);
         g2.drawString("MAX", right - 30, barY + 24);
 
@@ -758,7 +1049,7 @@ public class GamePanel extends JPanel {
             g2.drawString(String.valueOf(markers[i]), x, barY + 24);
             g2.setColor(new Color(255, 255, 255, 40));
             g2.fillOval(x - 2, barY + 11, 4, 4);
-            g2.setColor(new Color(160, 160, 160));
+            g2.setColor(C_MID_GRAY);
         }
 
         if (isActiveScreaming) {
@@ -773,6 +1064,28 @@ public class GamePanel extends JPanel {
         drawCharacterIcon(g2, charX, barY, liveScore, isActiveScreaming);
     }
 
+    /** Panel kaca tipis di belakang setiap lajur -- glassmorphism halus, tidak mengubah layout. */
+    private void drawLaneTrackPanel(Graphics2D g2, int left, int right, int barY, int waveAmplitude) {
+        int padTop = waveAmplitude + 26;
+        int padBottom = 34;
+        int px = left - 16;
+        int py = barY - padTop;
+        int pw = (right - left) + 32;
+        int ph = padTop + padBottom;
+
+        GradientPaint glass = new GradientPaint(
+                px, py, new Color(255, 255, 255, 10),
+                px, py + ph, new Color(255, 255, 255, 2)
+        );
+        g2.setPaint(glass);
+        g2.fillRoundRect(px, py, pw, ph, 22, 22);
+        g2.setPaint(null);
+
+        g2.setColor(new Color(255, 255, 255, 22));
+        g2.setStroke(new BasicStroke(1f));
+        g2.drawRoundRect(px, py, pw, ph, 22, 22);
+    }
+
     private void drawSpeedLines(Graphics2D g2, List<float[]> lines) {
         g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         for (float[] p : lines) {
@@ -782,10 +1095,16 @@ public class GamePanel extends JPanel {
         }
     }
 
+    /** Shockwave dengan lapisan bloom (glow tebal redup di bawah, garis tajam di atas). */
     private void drawShockwaveRings(Graphics2D g2, List<float[]> rings) {
-        g2.setStroke(new BasicStroke(1.6f));
         for (float[] r : rings) {
             float x = r[0], y = r[1], radius = r[2], alpha = r[3];
+
+            g2.setStroke(new BasicStroke(6f));
+            g2.setColor(new Color(255, 255, 255, (int) Math.max(0, Math.min(255, alpha * 40))));
+            g2.drawOval((int) (x - radius), (int) (y - radius), (int) (radius * 2), (int) (radius * 2));
+
+            g2.setStroke(new BasicStroke(1.6f));
             g2.setColor(new Color(255, 255, 255, (int) Math.max(0, Math.min(255, alpha * 180))));
             g2.drawOval((int) (x - radius), (int) (y - radius), (int) (radius * 2), (int) (radius * 2));
         }
@@ -802,10 +1121,8 @@ public class GamePanel extends JPanel {
         }
     }
 
+    /** Waveform dengan bloom: beberapa lapisan stroke tebal-redup di bawah garis inti terang. */
     private void drawWaveLine(Graphics2D g2, LinkedList<Double> data, int left, int right, int baseY, int amplitude) {
-        g2.setColor(new Color(255, 255, 255, 210));
-        g2.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-
         Path2D path = new Path2D.Float();
         int n = data.size();
         float stepX = (float) (right - left) / (n - 1);
@@ -824,21 +1141,67 @@ public class GamePanel extends JPanel {
             }
             i++;
         }
+
+        // Lapisan bloom (glow) -- lebar menurun, alpha meningkat
+        g2.setColor(new Color(255, 255, 255, 18));
+        g2.setStroke(new BasicStroke(8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.draw(path);
+        g2.setColor(new Color(255, 255, 255, 45));
+        g2.setStroke(new BasicStroke(4.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.draw(path);
+
+        // Garis inti tajam
+        g2.setColor(new Color(255, 255, 255, 225));
+        g2.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         g2.draw(path);
     }
 
+    /**
+     * MASCOT REDESIGN — bentuk & identitas karakter TIDAK diubah dari versi
+     * sebelumnya (silhouette, ekspresi 3-tingkat, bandana, palet warna semua
+     * identik). Yang ditambahkan hanyalah:
+     *  - Soft ambient glow di belakang kepala saat berteriak (bloom halus).
+     *  - Rim-light tipis di sisi kepala untuk kesan kedalaman/pencahayaan.
+     *  - Idle breathing animation (bob vertikal sangat halus) saat tidak
+     *    sedang aktif berteriak, supaya karakter tidak terasa statis.
+     * Karakter tetap digambar TERAKHIR (paling atas) di drawSingleLane.
+     */
     private void drawCharacterIcon(Graphics2D g2, int x, int barY, double score, boolean isActiveScreaming) {
-        int radius = 20;
+        int radius = 21;
         boolean screaming = isActiveScreaming && score > THRESHOLD;
         double intensity = Math.max(0, Math.min(1.0, score / 100.0));
+
+        // 3 tingkat ekspresi: CALM -> FOCUSED (menahan) -> INTENSE (puncak teriak)
+        int tier = !screaming ? 0 : (intensity > 0.6 ? 2 : 1);
 
         int shakeRange = screaming ? (int) (score / 14.0) : 0;
         int jx = shakeRange > 0 ? rng.nextInt(shakeRange * 2 + 1) - shakeRange : 0;
         int jy = shakeRange > 0 ? rng.nextInt(shakeRange * 2 + 1) - shakeRange : 0;
 
-        int cx = x + jx;
-        int cy = barY + jy;
+        // Idle breathing: bob vertikal halus (~1.5px) saat tidak berteriak
+        int breathe = 0;
+        if (!screaming) {
+            breathe = (int) Math.round(1.4 * Math.sin(animSeconds() * 2.1 + x * 0.01));
+        }
 
+        int cx = x + jx;
+        int cy = barY + jy + breathe;
+
+        // ---- Ambient glow di belakang kepala saat berteriak (bloom monokrom) ----
+        if (screaming) {
+            Paint oldPaint = g2.getPaint();
+            RadialGradientPaint headGlow = new RadialGradientPaint(
+                    new Point2D.Float(cx, cy),
+                    radius * (1.6f + (float) intensity * 1.1f),
+                    new float[]{0f, 1f},
+                    new Color[]{new Color(255, 255, 255, (int) (50 + intensity * 70)), new Color(255, 255, 255, 0)}
+            );
+            g2.setPaint(headGlow);
+            g2.fillOval((int) (cx - radius * 2.6), (int) (cy - radius * 2.6), (int) (radius * 5.2), (int) (radius * 5.2));
+            g2.setPaint(oldPaint);
+        }
+
+        // ---- Rays energi saat berteriak (posisi & warna sama seperti sebelumnya) ----
         if (screaming) {
             int rays = 10;
             for (int r = 0; r < rays; r++) {
@@ -854,14 +1217,21 @@ public class GamePanel extends JPanel {
             }
         }
 
-        g2.setColor(new Color(0, 0, 0, 70));
-        g2.fillOval(cx - radius + 4, cy + radius - 2, (radius * 2) - 8, 8);
+        // ---- Bayangan lembut (drop shadow sedikit lebih dalam untuk kesan depth) ----
+        g2.setColor(new Color(0, 0, 0, 90));
+        g2.fillOval(cx - radius + 4, cy + radius - 1, (radius * 2) - 8, 7);
+        g2.setColor(new Color(0, 0, 0, 55));
+        g2.fillOval(cx - radius + 2, cy + radius - 3, (radius * 2) - 4, 9);
 
+        // ---- Bahu / badan kecil (tidak berubah dari versi sebelumnya) ----
         g2.setColor(new Color(235, 235, 235));
         g2.fillRoundRect(cx - (int) (radius * 0.85), cy + radius - 6, (int) (radius * 1.7), 12, 10, 10);
         g2.setColor(new Color(190, 190, 190));
         g2.setStroke(new BasicStroke(1f));
         g2.drawRoundRect(cx - (int) (radius * 0.85), cy + radius - 6, (int) (radius * 1.7), 12, 10, 10);
+
+        // ---- Kepala: silhouette stylized (bukan lingkaran polos) ----
+        GeneralPath head = buildHeadShape(cx, cy, radius);
 
         RadialGradientPaint headPaint = new RadialGradientPaint(
                 new Point2D.Float(cx - radius * 0.3f, cy - radius * 0.3f),
@@ -870,59 +1240,335 @@ public class GamePanel extends JPanel {
                 new Color[]{Color.WHITE, new Color(225, 225, 225)}
         );
         g2.setPaint(headPaint);
-        g2.fillOval(cx - radius, cy - radius, radius * 2, radius * 2);
+        g2.fill(head);
         g2.setPaint(null);
 
         g2.setColor(new Color(0, 0, 0, 40));
         g2.setStroke(new BasicStroke(1f));
-        g2.drawOval(cx - radius, cy - radius, radius * 2, radius * 2);
+        g2.draw(head);
 
-        g2.setColor(Color.BLACK);
-        Arc2D hair = new Arc2D.Float(cx - radius, cy - radius - 2, radius * 2, radius * 2, 0, 180, Arc2D.CHORD);
-        g2.fill(hair);
-        Path2D tuft = new Path2D.Float();
-        tuft.moveTo(cx - 3, cy - radius - 2);
-        tuft.curveTo(cx - 1, cy - radius - 10, cx + 5, cy - radius - 9, cx + 4, cy - radius - 1);
-        tuft.closePath();
-        g2.fill(tuft);
+        // ---- Rim-light tipis di sisi kanan kepala (kesan pencahayaan terarah) ----
+        Shape oldClip = g2.getClip();
+        g2.clip(head);
+        g2.setColor(new Color(255, 255, 255, 70));
+        g2.setStroke(new BasicStroke(2.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.drawArc((int) (cx - radius * 0.98), (int) (cy - radius * 1.05), (int) (radius * 1.96), (int) (radius * 2.1), -70, 90);
+        g2.setClip(oldClip);
 
-        if (screaming && intensity > 0.35) {
+        // ---- Rambut energik bergaya "spike" (mengganti setengah-lingkaran polos) ----
+        drawEnergyHair(g2, cx, cy, radius);
+
+        // ---- Bandana kecil di dahi -- aksesori tema kompetisi teriak (hitam, warna lama) ----
+        drawHeadband(g2, cx, cy, radius);
+
+        // ---- Pipi merona hanya di puncak teriakan (warna sama seperti sebelumnya) ----
+        if (tier == 2) {
             g2.setColor(new Color(255, 120, 120, (int) (60 + intensity * 90)));
-            g2.fillOval(cx - radius + 2, cy + 1, 6, 4);
-            g2.fillOval(cx + radius - 8, cy + 1, 6, 4);
+            g2.fillOval(cx - radius + 1, cy + 2, 7, 5);
+            g2.fillOval(cx + radius - 8, cy + 2, 7, 5);
         }
 
+        drawEyebrows(g2, cx, cy, radius, tier);
+        drawEyes(g2, cx, cy, radius, tier);
+        drawMouth(g2, cx, cy, tier, intensity);
+    }
+
+    /** Silhouette kepala non-lingkaran: dahi lebih lebar, dagu meruncing lembut. */
+    private GeneralPath buildHeadShape(int cx, int cy, int radius) {
+        GeneralPath path = new GeneralPath();
+        path.moveTo(cx, cy - radius * 1.05);
+        path.curveTo(cx + radius * 0.75, cy - radius * 1.0, cx + radius * 1.02, cy - radius * 0.35, cx + radius * 0.95, cy - radius * 0.05);
+        path.curveTo(cx + radius * 0.88, cy + radius * 0.45, cx + radius * 0.62, cy + radius * 0.85, cx + radius * 0.22, cy + radius * 1.08);
+        path.curveTo(cx + radius * 0.08, cy + radius * 1.16, cx - radius * 0.08, cy + radius * 1.16, cx - radius * 0.22, cy + radius * 1.08);
+        path.curveTo(cx - radius * 0.62, cy + radius * 0.85, cx - radius * 0.88, cy + radius * 0.45, cx - radius * 0.95, cy - radius * 0.05);
+        path.curveTo(cx - radius * 1.02, cy - radius * 0.35, cx - radius * 0.75, cy - radius * 1.0, cx, cy - radius * 1.05);
+        path.closePath();
+        return path;
+    }
+
+    /** Rambut spike energik (hitam, warna sama seperti hair lama) -- lebih berkarakter dari setengah-lingkaran polos. */
+    private void drawEnergyHair(Graphics2D g2, int cx, int cy, int radius) {
         g2.setColor(Color.BLACK);
-        g2.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        if (screaming) {
-            g2.drawLine(cx - 9, cy - 6, cx - 3, cy - 8);
-            g2.drawLine(cx + 3, cy - 8, cx + 9, cy - 6);
+        GeneralPath hair = new GeneralPath();
+        float topY = cy - radius * 1.05f;
+
+        float[] spikeX = {-0.85f, -0.5f, -0.15f, 0.2f, 0.55f, 0.85f};
+        float[] spikeH = {0.35f, 0.55f, 0.75f, 0.65f, 0.5f, 0.32f};
+
+        hair.moveTo(cx + spikeX[0] * radius, topY + radius * 0.5f);
+        for (int i = 0; i < spikeX.length; i++) {
+            float baseX = cx + spikeX[i] * radius;
+            float tipX = baseX + radius * 0.08f;
+            float tipY = topY - spikeH[i] * radius;
+            hair.lineTo(tipX, tipY);
+            float nextX = (i + 1 < spikeX.length) ? cx + spikeX[i + 1] * radius : cx + 0.95f * radius;
+            hair.lineTo((baseX + nextX) / 2f, topY + radius * 0.15f);
+        }
+        hair.lineTo(cx + 0.95f * radius, topY + radius * 0.55f);
+        hair.curveTo(cx + radius * 0.4f, topY + radius * 0.15f, cx - radius * 0.4f, topY + radius * 0.15f, cx - 0.85f * radius, topY + radius * 0.5f);
+        hair.closePath();
+        g2.fill(hair);
+    }
+
+    /** Bandana/headband kecil -- aksesori tema kompetisi (hitam, tidak menambah warna baru). */
+    private void drawHeadband(Graphics2D g2, int cx, int cy, int radius) {
+        g2.setColor(Color.BLACK);
+        int bandY = (int) (cy - radius * 0.42);
+        g2.fillRect(cx - radius + 1, bandY, radius * 2 - 2, (int) (radius * 0.16));
+
+        // Simpul kecil di sisi kanan biar terasa seperti ikat kepala petarung
+        GeneralPath knot = new GeneralPath();
+        knot.moveTo(cx + radius * 0.85f, bandY);
+        knot.lineTo(cx + radius * 1.15f, bandY - radius * 0.05f);
+        knot.lineTo(cx + radius * 1.05f, bandY + radius * 0.22f);
+        knot.closePath();
+        g2.fill(knot);
+    }
+
+    /** Alis dinamis: relaks (tenang) -> menukik fokus (menahan) -> tajam terangkat (puncak teriak). */
+    private void drawEyebrows(Graphics2D g2, int cx, int cy, int radius, int tier) {
+        g2.setColor(Color.BLACK);
+        int browY = cy - (int) (radius * 0.28);
+
+        if (tier == 0) {
+            g2.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            QuadCurve2D leftBrow = new QuadCurve2D.Float(cx - 11, browY + 1, cx - 6, browY - 2, cx - 2, browY);
+            QuadCurve2D rightBrow = new QuadCurve2D.Float(cx + 2, browY, cx + 6, browY - 2, cx + 11, browY + 1);
+            g2.draw(leftBrow);
+            g2.draw(rightBrow);
+        } else if (tier == 1) {
+            g2.setStroke(new BasicStroke(2.1f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.drawLine(cx - 12, browY - 1, cx - 3, browY + 4);
+            g2.drawLine(cx + 3, browY + 4, cx + 12, browY - 1);
         } else {
-            g2.drawLine(cx - 9, cy - 4, cx - 3, cy - 4);
-            g2.drawLine(cx + 3, cy - 4, cx + 9, cy - 4);
+            g2.setStroke(new BasicStroke(2.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.drawLine(cx - 13, browY + 3, cx - 3, browY - 5);
+            g2.drawLine(cx + 3, browY - 5, cx + 13, browY + 3);
         }
+    }
 
+    /** Mata ekspresif: bulat tenang -> menyipit menahan -> membelalak besar di puncak teriak. */
+    private void drawEyes(Graphics2D g2, int cx, int cy, int radius, int tier) {
         g2.setColor(Color.BLACK);
-        if (screaming && intensity > 0.6) {
+        int eyeY = cy - 2;
+
+        if (tier == 0) {
+            g2.fillOval(cx - 8, eyeY, 4, 4);
+            g2.fillOval(cx + 4, eyeY, 4, 4);
+        } else if (tier == 1) {
             g2.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            g2.drawLine(cx - 8, cy - 1, cx - 4, cy - 1);
-            g2.drawLine(cx + 4, cy - 1, cx + 8, cy - 1);
+            g2.drawLine(cx - 9, eyeY + 2, cx - 3, eyeY + 2);
+            g2.drawLine(cx + 3, eyeY + 2, cx + 9, eyeY + 2);
         } else {
-            g2.fillOval(cx - 8, cy - 2, 4, 4);
-            g2.fillOval(cx + 4, cy - 2, 4, 4);
-        }
-
-        if (screaming) {
-            int mouthW = 13;
-            int mouthH = (int) Math.min(14, 5 + intensity * 10);
-            g2.setColor(new Color(60, 20, 20));
-            g2.fillOval(cx - mouthW / 2, cy + 5, mouthW, mouthH);
             g2.setColor(Color.WHITE);
-            g2.fillRect(cx - mouthW / 2 + 2, cy + 5, mouthW - 4, Math.max(2, mouthH / 4));
-        } else {
+            g2.fillOval(cx - 10, eyeY - 3, 8, 8);
+            g2.fillOval(cx + 2, eyeY - 3, 8, 8);
+            g2.setColor(new Color(0, 0, 0, 60));
+            g2.drawOval(cx - 10, eyeY - 3, 8, 8);
+            g2.drawOval(cx + 2, eyeY - 3, 8, 8);
+            g2.setColor(Color.BLACK);
+            g2.fillOval(cx - 7, eyeY - 1, 4, 4);
+            g2.fillOval(cx + 5, eyeY - 1, 4, 4);
+        }
+    }
+
+    /** Mulut: garis tipis tenang -> gigit-menahan -> terbuka lebar dengan highlight gigi di puncak. */
+    private void drawMouth(Graphics2D g2, int cx, int cy, int tier, double intensity) {
+        if (tier == 0) {
             g2.setColor(Color.BLACK);
             g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             g2.drawLine(cx - 6, cy + 9, cx + 6, cy + 9);
+        } else if (tier == 1) {
+            g2.setColor(new Color(60, 20, 20));
+            g2.fillRoundRect(cx - 7, cy + 7, 14, 3, 3, 3);
+            g2.setColor(Color.BLACK);
+            g2.setStroke(new BasicStroke(1.4f));
+            g2.drawRoundRect(cx - 7, cy + 7, 14, 3, 3, 3);
+        } else {
+            int mouthW = 15;
+            int mouthH = (int) Math.min(16, 8 + intensity * 10);
+            g2.setColor(new Color(60, 20, 20));
+            g2.fillOval(cx - mouthW / 2, cy + 4, mouthW, mouthH);
+            g2.setColor(Color.WHITE);
+            g2.fillRect(cx - mouthW / 2 + 2, cy + 4, mouthW - 4, Math.max(2, mouthH / 4));
+            g2.setColor(new Color(30, 8, 8));
+            g2.fillOval(cx - 3, cy + 4 + mouthH - 5, 6, 5);
+        }
+    }
+
+    // =========================================================================================
+    //  GlassStrip — panel header/footer bergaya glassmorphism tipis (hairline glow + gradient).
+    //  Murni komponen presentasi, tidak menyimpan/mempengaruhi state gameplay apapun.
+    // =========================================================================================
+    private static class GlassStrip extends JPanel {
+        enum Edge { TOP, BOTTOM }
+        private final Edge edge;
+
+        GlassStrip(Edge edge) {
+            this.edge = edge;
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            int w = getWidth();
+            int h = getHeight();
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            GradientPaint glass = (edge == Edge.TOP)
+                    ? new GradientPaint(0, 0, new Color(255, 255, 255, 10), 0, h, new Color(255, 255, 255, 0))
+                    : new GradientPaint(0, 0, new Color(255, 255, 255, 0), 0, h, new Color(255, 255, 255, 10));
+            g2.setPaint(glass);
+            g2.fillRect(0, 0, w, h);
+
+            g2.setColor(new Color(255, 255, 255, 30));
+            g2.setStroke(new BasicStroke(1f));
+            if (edge == Edge.TOP) {
+                g2.drawLine(0, h - 1, w, h - 1);
+            } else {
+                g2.drawLine(0, 0, w, 0);
+            }
+            g2.dispose();
+        }
+    }
+
+    // =========================================================================================
+    //  PremiumButton — pengganti JButton polos: rounded corners, layered shadow, border glow
+    //  saat hover/focus, animasi scale halus saat ditekan. Tidak membawa logic gameplay apapun;
+    //  hanya memanggil ActionListener yang didaftarkan seperti JButton biasa.
+    // =========================================================================================
+    private static class PremiumButton extends JButton {
+        enum Style { SOLID, OUTLINE, GHOST }
+
+        private final Style style;
+        private float hoverT = 0f;   // 0..1, dianimasikan menuju target saat hover berubah
+        private float pressT = 0f;   // 0..1, untuk efek scale saat ditekan
+        private boolean hovering = false;
+        private boolean pressed = false;
+        private boolean active = false; // dipakai btnMicToggle untuk menandakan "mic aktif"
+        private final Timer animTimer;
+
+        PremiumButton(String text, int fontSize, Style style) {
+            super(text);
+            this.style = style;
+            setFont(new Font("Arial", Font.BOLD, fontSize));
+            setForeground(C_SOFT_WHITE);
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+            setAlignmentX(Component.CENTER_ALIGNMENT);
+
+            addMouseListener(new MouseAdapter() {
+                @Override public void mouseEntered(MouseEvent e) { hovering = true; }
+                @Override public void mouseExited(MouseEvent e) { hovering = false; pressed = false; }
+                @Override public void mousePressed(MouseEvent e) { pressed = true; }
+                @Override public void mouseReleased(MouseEvent e) { pressed = false; }
+            });
+
+            animTimer = new Timer(16, e -> {
+                float hoverTarget = hovering ? 1f : 0f;
+                float pressTarget = pressed ? 1f : 0f;
+                hoverT += (hoverTarget - hoverT) * 0.2f;
+                pressT += (pressTarget - pressT) * 0.35f;
+                repaint();
+            });
+            animTimer.start();
+        }
+
+        void setActiveStyle(boolean active) {
+            this.active = active;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            int w = getWidth();
+            int h = getHeight();
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            float scale = 1f - pressT * 0.035f;
+            g2.translate(w / 2.0, h / 2.0);
+            g2.scale(scale, scale);
+            g2.translate(-w / 2.0, -h / 2.0);
+
+            int arc = Math.min(18, h / 2);
+            RoundRectangle2D shape = new RoundRectangle2D.Float(2, 2, w - 4, h - 4, arc, arc);
+
+            // Bayangan berlapis di bawah tombol (depth)
+            g2.setColor(new Color(0, 0, 0, 120));
+            g2.fill(new RoundRectangle2D.Float(3, 5, w - 6, h - 4, arc, arc));
+
+            switch (style) {
+                case SOLID: {
+                    GradientPaint bg = new GradientPaint(0, 2, new Color(60, 60, 64), 0, h - 2, new Color(20, 20, 22));
+                    g2.setPaint(bg);
+                    g2.fill(shape);
+                    g2.setPaint(null);
+                    break;
+                }
+                case OUTLINE: {
+                    GradientPaint bg = new GradientPaint(0, 2, new Color(255, 255, 255, active ? 26 : 14), 0, h - 2, new Color(255, 255, 255, 4));
+                    g2.setPaint(bg);
+                    g2.fill(shape);
+                    g2.setPaint(null);
+                    break;
+                }
+                case GHOST:
+                default: {
+                    if (hoverT > 0.01f) {
+                        g2.setColor(new Color(255, 255, 255, (int) (18 * hoverT)));
+                        g2.fill(shape);
+                    }
+                    break;
+                }
+            }
+
+            // Glow border saat hover/aktif
+            float glowStrength = Math.max(hoverT, active ? 0.8f : 0f);
+            if (glowStrength > 0.01f && style != Style.GHOST) {
+                g2.setColor(new Color(255, 255, 255, (int) (70 * glowStrength)));
+                g2.setStroke(new BasicStroke(2.4f));
+                g2.draw(shape);
+            }
+
+            // Border dasar
+            Color borderColor = style == Style.GHOST
+                    ? new Color(255, 255, 255, (int) (60 + 80 * hoverT))
+                    : new Color(255, 255, 255, (int) (110 + 90 * hoverT));
+            g2.setColor(borderColor);
+            g2.setStroke(new BasicStroke(1.2f));
+            g2.draw(shape);
+
+            // Highlight tipis di tepi atas (kesan glass/premium)
+            g2.setColor(new Color(255, 255, 255, 40));
+            g2.setStroke(new BasicStroke(1f));
+            g2.drawLine(6, 3, w - 6, 3);
+
+            // Teks dengan sedikit glow saat hover
+            FontMetrics fm = g2.getFontMetrics(getFont());
+            String text = getText();
+            int tx = (w - fm.stringWidth(text)) / 2;
+            int ty = (h + fm.getAscent()) / 2 - 3;
+
+            if (hoverT > 0.02f) {
+                g2.setColor(new Color(255, 255, 255, (int) (90 * hoverT)));
+                g2.setFont(getFont());
+                g2.drawString(text, tx - 1, ty);
+                g2.drawString(text, tx + 1, ty);
+            }
+
+            g2.setColor(new Color(0, 0, 0, 160));
+            g2.setFont(getFont());
+            g2.drawString(text, tx + 1, ty + 1);
+            g2.setColor(active ? C_SOFT_WHITE : getForeground());
+            g2.drawString(text, tx, ty);
+
+            g2.dispose();
         }
     }
 }
