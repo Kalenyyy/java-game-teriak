@@ -8,6 +8,7 @@ public class GameState {
     public static LinkedList<Player> allPlayers = new LinkedList<>();
     public static Queue<Player> turnQueue = new LinkedList<>();
     public static boolean isTournamentMode = false;
+    public static boolean isSoloMode = false;
     public static MatchNode tournamentRoot;
     public static ArrayList<MatchNode> allMatches = new ArrayList<>();
 
@@ -15,6 +16,7 @@ public class GameState {
         allPlayers.clear();
         turnQueue.clear();
         isTournamentMode = false;
+        isSoloMode = false;
         tournamentRoot = null;
         allMatches.clear();
     }
