@@ -428,26 +428,25 @@ public class GamePanel extends JPanel {
         currentPlayer.setScore(peakScore);
         statusText = currentPlayer.getName().toUpperCase() + " SELESAI! SKOR: " + (int) peakScore;
 
+        // SIMPAN SKOR JIKA SOLO
+        if (GameState.isSoloMode) {
+            ScoreManager.saveScore(currentPlayer.getName(), (int) peakScore);
+        }
+
         sound.stopScreamLoop();
         sound.restoreBGM();
 
-        float finalNorm = (float) Math.max(0, Math.min(1.0, peakScore / 100.0));
-        int popupX, popupY;
         if (isTopPlayer(currentPlayer)) {
-            targetPosTop = finalNorm;
+            targetPosTop = (float) Math.max(0, Math.min(1.0, peakScore / 100.0));
             frozenTop = true;
-            popupX = -1; // dihitung ulang di paint-time via lane geometry; simpan flag saja
-            popupY = 0;
             triggerScorePopup(true);
         } else if (isBottomPlayer(currentPlayer)) {
-            targetPosBottom = finalNorm;
+            targetPosBottom = (float) Math.max(0, Math.min(1.0, peakScore / 100.0));
             frozenBottom = true;
             triggerScorePopup(false);
         }
 
-        if (peakScore >= MAX_REACH_SCORE) {
-            triggerFlash();
-        }
+        if (peakScore >= MAX_REACH_SCORE) triggerFlash();
 
         Timer pause = new Timer(1500, e -> prepareNextTurn());
         pause.setRepeats(false);
@@ -758,7 +757,8 @@ public class GamePanel extends JPanel {
         g2.setFont(new Font("Arial", Font.PLAIN, 13));
         g2.setColor(C_MID_GRAY);
         FontMetrics fmSmall = g2.getFontMetrics();
-        String sub = "M O D E   D U E L";
+        String sub = GameState.isSoloMode ? "M O D E   S O L O" : "M O D E   D U E L";
+        if (GameState.isTournamentMode) sub = "M O D E   T U R N A M E N";
         g2.drawString(sub, (w - fmSmall.stringWidth(sub)) / 2, 34);
 
         Font titleFont = pickTitleFont(46);
@@ -930,21 +930,29 @@ public class GamePanel extends JPanel {
     private void drawLanes(Graphics2D g2, int w, int h) {
         int left = LANE_MARGIN_X;
         int right = w - LANE_MARGIN_X;
-
-        int barTopY = (int) (h * BAR_TOP_RATIO);
-        int barBottomY = (int) (h * BAR_BOTTOM_RATIO);
         int waveAmplitude = (int) (h * WAVE_AMPLITUDE_RATIO);
 
-        boolean topActive = currentPlayer != null && isTopPlayer(currentPlayer) && listening;
-        boolean bottomActive = currentPlayer != null && isBottomPlayer(currentPlayer) && listening;
+        if (GameState.isSoloMode) {
+            // Mode Solo: Satu baris di tengah
+            int barCenterY = h / 2;
+            boolean active = listening && isTopPlayer(currentPlayer);
+            drawSingleLane(g2, left, right, barCenterY, waveAmplitude,
+                    playerTop, waveTop, livePosTop, liveScoreTop, active,
+                    trailTop, ringsTop, speedLinesTop);
+        } else {
+            // Mode Duel/Tournament: Atas & Bawah
+            int barTopY = (int) (h * BAR_TOP_RATIO);
+            int barBottomY = (int) (h * BAR_BOTTOM_RATIO);
+            boolean topActive = listening && isTopPlayer(currentPlayer);
+            boolean bottomActive = listening && isBottomPlayer(currentPlayer);
 
-        drawSingleLane(g2, left, right, barTopY, waveAmplitude,
-                playerTop, waveTop, livePosTop, liveScoreTop, topActive,
-                trailTop, ringsTop, speedLinesTop);
-
-        drawSingleLane(g2, left, right, barBottomY, waveAmplitude,
-                playerBottom, waveBottom, livePosBottom, liveScoreBottom, bottomActive,
-                trailBottom, ringsBottom, speedLinesBottom);
+            drawSingleLane(g2, left, right, barTopY, waveAmplitude,
+                    playerTop, waveTop, livePosTop, liveScoreTop, topActive,
+                    trailTop, ringsTop, speedLinesTop);
+            drawSingleLane(g2, left, right, barBottomY, waveAmplitude,
+                    playerBottom, waveBottom, livePosBottom, liveScoreBottom, bottomActive,
+                    trailBottom, ringsBottom, speedLinesBottom);
+        }
     }
 
     private void drawSingleLane(Graphics2D g2, int left, int right, int barY, int waveAmplitude,

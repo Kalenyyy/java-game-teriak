@@ -19,6 +19,8 @@ public class MainFrame extends JFrame {
         mainPanel.add(new Input2PPanel(this), "INPUT_2P");
         mainPanel.add(new InputTournamentPanel(this), "INPUT_TOURNAMENT");
         mainPanel.add(new TournamentBracketPanel(this), "BRACKET_SCREEN");
+        mainPanel.add(new SoloInputPanel(this), "SOLO_INPUT");
+        mainPanel.add(new LeaderboardPanel(this), "LEADERBOARD_SCREEN");
 
         add(mainPanel);
 

@@ -289,13 +289,53 @@ public class ResultPanel extends JPanel {
     }
 
     // ---- Blok: Hasil Duel/Solo (perbandingan 2 pemain, seperti versi asli) ----
+    // ---- Blok: Hasil Duel/Solo (perbandingan 2 pemain atau skor tunggal solo) ----
     private JPanel buildDuelResultBlock() {
         JPanel box = new JPanel();
         box.setOpaque(false);
         box.setLayout(new BoxLayout(box, BoxLayout.Y_AXIS));
 
+        // Validasi jika list player kosong
+        if (GameState.allPlayers.isEmpty()) {
+            JLabel empty = new JLabel("DATA PEMAIN TIDAK DITEMUKAN");
+            empty.setAlignmentX(Component.CENTER_ALIGNMENT);
+            empty.setForeground(new Color(150, 150, 150));
+            empty.setFont(new Font("Arial", Font.BOLD, 16));
+            box.add(empty);
+            return box;
+        }
+
+        // =========================================================
+        // LOGIKA MODE SOLO (MAIN SENDIRI)
+        // =========================================================
+        if (GameState.isSoloMode) {
+            Player pSolo = GameState.allPlayers.get(0);
+
+            JPanel soloRow = new JPanel();
+            soloRow.setOpaque(false);
+            soloRow.setLayout(new BoxLayout(soloRow, BoxLayout.X_AXIS));
+            soloRow.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+            // Menampilkan satu kartu skor (di-highlight sebagai winner agar estetik)
+            soloRow.add(buildScoreCard(pSolo, true));
+
+            JLabel lblSolo = new JLabel("SKOR KAMU BERHASIL TERSIMPAN!");
+            lblSolo.setAlignmentX(Component.CENTER_ALIGNMENT);
+            lblSolo.setFont(new Font("Arial", Font.BOLD, 24));
+            lblSolo.setForeground(Color.WHITE);
+            lblSolo.setBorder(new EmptyBorder(30, 0, 0, 0));
+
+            box.add(soloRow);
+            box.add(lblSolo);
+
+            return box; // Keluar dari method karena tugas selesai untuk mode solo
+        }
+
+        // =========================================================
+        // LOGIKA MODE DUEL
+        // =========================================================
         if (GameState.allPlayers.size() < 2) {
-            JLabel empty = new JLabel("DATA PEMAIN TIDAK LENGKAP");
+            JLabel empty = new JLabel("DATA PEMAIN DUEL TIDAK LENGKAP");
             empty.setAlignmentX(Component.CENTER_ALIGNMENT);
             empty.setForeground(new Color(150, 150, 150));
             empty.setFont(new Font("Arial", Font.BOLD, 16));
@@ -315,6 +355,7 @@ public class ResultPanel extends JPanel {
         cardsRow.setLayout(new BoxLayout(cardsRow, BoxLayout.X_AXIS));
         cardsRow.setAlignmentX(Component.CENTER_ALIGNMENT);
 
+        // Menggunakan method buildScoreCard bawaan ResultPanel
         cardsRow.add(buildScoreCard(p1, p1Wins && !tie));
         cardsRow.add(Box.createRigidArea(new Dimension(24, 0)));
         cardsRow.add(buildScoreCard(p2, p2Wins && !tie));
@@ -329,6 +370,7 @@ public class ResultPanel extends JPanel {
 
         box.add(cardsRow);
         box.add(lblWin);
+
         return box;
     }
 

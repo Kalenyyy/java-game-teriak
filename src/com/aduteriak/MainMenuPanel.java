@@ -117,31 +117,28 @@ public class MainMenuPanel extends JPanel {
 
         List<MenuButton> buttons = new ArrayList<>();
 
-        MenuButton btnMainSendiri = new MenuButton("MAIN SENDIRI (Belum Ada)", false);
+        // UBAH: Hapus "(Belum Ada)"
+        MenuButton btnMainSendiri = new MenuButton("MAIN SENDIRI", false);
         MenuButton btnDuel = new MenuButton("MODE DUEL", false);
         MenuButton btnTurnamen = new MenuButton("MODE TURNAMEN", false);
-        MenuButton btnPeringkat = new MenuButton("PAPAN PERINGKAT (Belum Ada)", false);
-        MenuButton btnPengaturan = new MenuButton("PENGATURAN (Belum Ada)", false);
+        MenuButton btnPeringkat = new MenuButton("PAPAN PERINGKAT", false);
 
         buttons.add(btnMainSendiri);
         buttons.add(btnDuel);
         buttons.add(btnTurnamen);
         buttons.add(btnPeringkat);
-        buttons.add(btnPengaturan);
 
-        // Klik tombol -> jadikan tombol tsb aktif, lainnya non-aktif
         for (MenuButton b : buttons) {
             b.addActionListener(e -> {
                 for (MenuButton other : buttons) other.setActiveState(other == b);
             });
         }
 
-        // Sambungkan ke navigasi MainFrame kamu (sesuaikan nama view sesuai kebutuhan)
-        btnMainSendiri.addActionListener(e -> parent.showView("SOLO"));
+        // PASTIKAN: Nama view di sini sama dengan yang ada di MainFrame
+        btnMainSendiri.addActionListener(e -> parent.showView("SOLO_INPUT")); // Ganti ke SOLO_INPUT
         btnDuel.addActionListener(e -> parent.showView("INPUT_2P"));
         btnTurnamen.addActionListener(e -> parent.showView("INPUT_TOURNAMENT"));
-        btnPeringkat.addActionListener(e -> parent.showView("LEADERBOARD"));
-        btnPengaturan.addActionListener(e -> parent.showView("SETTINGS"));
+        btnPeringkat.addActionListener(e -> parent.showView("LEADERBOARD_SCREEN")); // Ganti ke LEADERBOARD_SCREEN
 
         menuBox.add(Box.createVerticalGlue());
         for (MenuButton b : buttons) {
@@ -149,7 +146,6 @@ public class MainMenuPanel extends JPanel {
             menuBox.add(Box.createRigidArea(new Dimension(0, 14)));
         }
 
-        // Tombol "KELUAR" dengan gaya kotak yang sama seperti tombol lain
         MenuButton btnExit = new MenuButton("KELUAR", false);
         btnExit.addActionListener(e -> System.exit(0));
 
