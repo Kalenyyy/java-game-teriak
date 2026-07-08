@@ -11,25 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-/**
- * InputTournamentPanel.java
- * Halaman input peserta Mode Turnamen -- REDESIGN VISUAL TOTAL.
- *
- * Tema: monochrome brutalist-cinematic (Limbo / Inside / Superhot / Stick Fight
- * / Playdead UI / Steam indie menu), tanpa warna mencolok sama sekali -- murni
- * hitam, putih, abu-abu.
- *
- * PENTING: Seluruh LOGIKA program (generateFields, startTournament, GameState,
- * TournamentManager, navigasi) dipertahankan 100% sama seperti versi asli.
- * Yang berubah HANYA layout, warna, font, animasi, painting, dan komponen
- * kustom. Semua efek dibuat ringan murni dengan Java2D (tanpa library luar):
- * vignette, noise/grain, spotlight, kabut tipis bergerak, floating dust,
- * scanline tipis, fake bloom di belakang judul, stickman redesign dengan
- * faux-blur & glow, segmented control modern, custom rounded input field
- * dengan glow fokus, tombol utama dengan hover-scale + ripple, scrollbar
- * custom tipis, dan animasi entrance slide/fade -- semua berjalan di master
- * timer 60 FPS (16ms).
- */
+
 public class InputTournamentPanel extends JPanel {
 
     // =========================================================
