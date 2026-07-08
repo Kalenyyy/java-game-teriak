@@ -12,66 +12,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 
-/**
- * GamePanel.java
- * Panel gameplay utama game "AAAAAAAAAAAA". Menangani giliran teriak
- * BERGANTIAN mengikuti antrian GameState.turnQueue -- dipakai baik untuk
- * mode "MAIN SENDIRI" (1 pemain di antrian) maupun "MODE DUEL" (2 pemain
- * di antrian, ditampilkan sebagai lajur atas & bawah).
- *
- * ============================================================================
- *  VISUAL OVERHAUL NOTE
- * ============================================================================
- * Seluruh GAMEPLAY, LOGIC, MEKANIK, dan FLOW pada file ini TIDAK diubah sama
- * sekali dibanding versi sebelumnya. Perubahan yang dilakukan murni bersifat
- * VISUAL/PRESENTASI, dengan tetap mempertahankan identitas monokrom
- * (hitam / putih / abu-abu / abu-abu gelap / soft white):
- *
- *   - Tombol didesain ulang total lewat class PremiumButton (glass, glow,
- *     hover/press animation, layered shadow) menggantikan JButton polos.
- *   - Header & footer kini berupa "GlassStrip" dengan gradient tipis dan
- *     garis cahaya (hairline glow) -- bukan JPanel transparan biasa.
- *   - Background diberi ambient light beam yang bergerak pelan, vignette,
- *     dan partikel debu mengambang -- semua tetap grayscale.
- *   - Judul memakai efek metallic + glow + sedikit "breathing" scale.
- *   - Countdown kini punya animasi scale-in dengan overshoot + glow pulse.
- *   - Waveform & shockwave ring diberi lapisan bloom (multi-stroke glow).
- *   - Karakter diberi rim-light, soft ambient glow saat berteriak, dan
- *     idle breathing animation -- bentuk/identitas karakter TIDAK diubah.
- *   - Skor tinggi memicu "score pop" (scale + glow + fade) selain flash.
- *
- * Tidak ada satupun warna baru di luar palet monokrom yang ditambahkan;
- * seluruh efek baru hanya memakai opacity/gradient/glow dari warna yang
- * sudah ada (putih/abu-abu/hitam).
- * ============================================================================
- *
- * Mekanik:
- * - Sebelum mikrofon mulai dihitung, ditampilkan countdown "3, 2, 1, MULAIIII!".
- * - Karakter pemain yang sedang giliran mulai di posisi KIRI (LOW), lalu bergerak
- *   ke KANAN (menuju MAX) proporsional terhadap desibel real-time, dan meluncur
- *   balik ke kiri (lerp) saat suara mengecil.
- * - Waveform digambar di ATAS bar skala.
- * - Dua lajur (atas = pemain pertama, bawah = pemain kedua jika ada) selalu
- *   tampil; lajur milik pemain yang tidak sedang giliran "membeku" di posisi
- *   terakhirnya.
- *
- * Fitur audio & visual juice:
- * - BGM tegang yang loop sejak panel dimuat, dengan efek ducking saat teriakan mulai.
- * - SFX tick tiap angka countdown & impact saat "MULAIIII!".
- * - SFX distorsi (scream echo) yang volumenya mengikuti dB teriakan secara real-time.
- * - Screen shake seluruh panel saat dB mendekati MAX.
- * - Afterimage/motion blur di belakang karakter saat bergerak cepat.
- * - Shockwave ring yang memancar dari mulut karakter saat berteriak.
- * - Speed lines di sekitar bar saat karakter melesat maju.
- * - Flash putih singkat saat seorang pemain mencapai skor mendekati MAX.
- *
- * Catatan arsitektur:
- * - Akuisisi mikrofon didelegasikan ke class AudioCapture (file terpisah).
- * - Audio management (BGM/SFX) didelegasikan ke class SoundManager (file terpisah).
- * - Panel ini TIDAK memiliki inner-class bertumpuk untuk logic berat; satu-satunya
- *   nested class adalah PremiumButton/GlassStrip yang murni untuk keperluan
- *   rendering UI dan tidak menyimpan state gameplay apapun.
- */
 public class GamePanel extends JPanel {
 
     private final MainFrame parent;

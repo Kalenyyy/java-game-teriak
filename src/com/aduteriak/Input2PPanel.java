@@ -7,23 +7,7 @@ import java.awt.event.*;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 
-/**
- * Input2PPanel.java
- * Halaman input nama untuk Mode Duel (2 pemain), sebelum masuk ke GamePanel.
- *
- * Tema visual disamakan dengan MainMenuPanel: gradient monochrome, siluet
- * stickman transparan, font Impact/Arial Black untuk judul, dan gaya tombol
- * borderless dengan efek hover hitam-putih.
- *
- * Efek tambahan:
- * - Fade-in dari gelap saat panel pertama kali tampil.
- * - Kolom nama custom (rounded) dengan glow border saat sedang fokus diketik.
- * - Badge "VS" berdenyut lembut di antara dua kolom nama.
- * - Tombol MULAI dengan efek hover + glow pulsing halus.
- *
- * Logika inti (pembuatan Player, pengisian queue, navigasi) TIDAK diubah
- * dari versi asli, hanya dibungkus tampilan yang lebih sesuai tema.
- */
+
 public class Input2PPanel extends JPanel {
 
     private float entranceAlpha = 1f; // 1 = gelap penuh, 0 = transparan (reveal selesai)

@@ -10,19 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-/**
- * TournamentBracketPanel.java
- * Halaman bagan turnamen -- REDESIGN VISUAL TOTAL, senada InputTournamentPanel.
- *
- * Tema: monochrome brutalist-cinematic, murni hitam/putih/abu-abu tanpa
- * warna mencolok sama sekali (termasuk status "menang" -- diselaraskan jadi
- * putih terang + bold + glow, bukan lagi emas/hijau/merah).
- *
- * PENTING: Seluruh LOGIKA program (drawNode, refreshBracket, shuffle, cek
- * turnamen selesai, updateQueueFromTree, navigasi ke GamePanel/ResultPanel)
- * dipertahankan 100% sama seperti versi asli. Yang berubah HANYA layout,
- * warna, font, animasi, dan painting.
- */
+
 public class TournamentBracketPanel extends JPanel {
 
     // =========================================================
