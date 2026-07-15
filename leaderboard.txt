@@ -7,3 +7,7 @@ angger,0
 badass,40
 melvin,0
 vici,0
+yamal,38
+mbappe,10
+ronaldono,33
+andam,54
