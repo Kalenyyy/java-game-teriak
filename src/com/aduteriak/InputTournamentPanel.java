@@ -351,7 +351,7 @@ public class InputTournamentPanel extends JPanel {
 
         JPanel topRow = new JPanel(new BorderLayout());
         topRow.setOpaque(false);
-        topRow.add(new MinimalBackButton("\u2190 KEMBALI", () -> parent.showView("MENU_UTAMA")), BorderLayout.WEST);
+        topRow.add(new MinimalBackButton("KEMBALI", () -> parent.showView("MENU_UTAMA")), BorderLayout.WEST);
 
         TitleHeader titleHeader = new TitleHeader();
         titleHeader.setPreferredSize(new Dimension(10, 140));
@@ -584,82 +584,115 @@ public class InputTournamentPanel extends JPanel {
     }
 
     // =========================================================
-    //  KOMPONEN KUSTOM: Tombol kembali minimalis
+    //  KOMPONEN KUSTOM: Tombol kembali "← KEMBALI" gaya kartu gelap (SAMA PERSIS di semua halaman)
     // =========================================================
     private static class MinimalBackButton extends JComponent {
-        private final String text;
+        private static final String ARROW = "\u2190";
+        private final String label;
         private final Runnable action;
-        private boolean hover = false;
-        private float pressScale = 1f;
-        private Timer pressTimer;
+        private float hoverT = 0f;
+        private float pressT = 0f;
+        private boolean hovering = false;
+        private boolean pressed = false;
+        private final Timer animTimer;
 
-        MinimalBackButton(String text, Runnable action) {
-            this.text = text;
+        MinimalBackButton(String label, Runnable action) {
+            this.label = label;
             this.action = action;
             setOpaque(false);
-            setFont(new Font("Arial", Font.PLAIN, 14));
+            setFont(new Font("Arial", Font.BOLD, 13));
             setCursor(new Cursor(Cursor.HAND_CURSOR));
-            setPreferredSize(new Dimension(120, 44));
-            setBorder(new EmptyBorder(16, 18, 0, 0));
+            setBorder(new EmptyBorder(16, 16, 8, 8));
+            setPreferredSize(new Dimension(164, 58));
+            setMaximumSize(new Dimension(174, 58));
 
             addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseEntered(MouseEvent e) {
-                    hover = true;
-                    repaint();
+                    hovering = true;
                 }
 
                 @Override
                 public void mouseExited(MouseEvent e) {
-                    hover = false;
-                    repaint();
+                    hovering = false;
+                    pressed = false;
                 }
 
                 @Override
                 public void mousePressed(MouseEvent e) {
-                    animatePress();
+                    pressed = true;
                 }
 
                 @Override
-                public void mouseClicked(MouseEvent e) {
-                    action.run();
+                public void mouseReleased(MouseEvent e) {
+                    boolean wasPressed = pressed;
+                    pressed = false;
+                    if (wasPressed && contains(e.getPoint())) {
+                        action.run();
+                    }
                 }
             });
-        }
 
-        private void animatePress() {
-            pressScale = 0.9f;
-            repaint();
-            if (pressTimer != null) pressTimer.stop();
-            pressTimer = new Timer(30, e -> {
-                pressScale += (1f - pressScale) * 0.4f;
-                if (Math.abs(1f - pressScale) < 0.01f) {
-                    pressScale = 1f;
-                    ((Timer) e.getSource()).stop();
-                }
+            animTimer = new Timer(16, e -> {
+                float hoverTarget = hovering ? 1f : 0f;
+                float pressTarget = pressed ? 1f : 0f;
+                hoverT += (hoverTarget - hoverT) * 0.2f;
+                pressT += (pressTarget - pressT) * 0.35f;
                 repaint();
             });
-            pressTimer.start();
+            animTimer.start();
         }
 
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-            int shiftX = hover ? 5 : 0;
-            g2.translate(14 + shiftX, 26);
-            g2.scale(pressScale, pressScale);
+            Insets in = getInsets();
+            int cardX = in.left;
+            int cardY = in.top;
+            int cardW = getWidth() - in.left - in.right;
+            int cardH = getHeight() - in.top - in.bottom;
+
+            float scale = 1f - pressT * 0.035f;
+            double cx = cardX + cardW / 2.0;
+            double cy = cardY + cardH / 2.0;
+            g2.translate(cx, cy);
+            g2.scale(scale, scale);
+            g2.translate(-cx, -cy);
+
+            int arc = Math.min(16, cardH / 2);
+            RoundRectangle2D shape = new RoundRectangle2D.Float(cardX, cardY, cardW, cardH, arc, arc);
+
+            // Bayangan tipis di bawah kartu (depth)
+            g2.setColor(new Color(0, 0, 0, 90));
+            g2.fill(new RoundRectangle2D.Float(cardX + 1, cardY + 3, cardW, cardH, arc, arc));
+
+            // Isi kartu GELAP SOLID -- selalu sama warnanya di background apa pun
+            g2.setColor(new Color(22, 22, 24, (int) (215 + 20 * hoverT)));
+            g2.fill(shape);
+
+            // Border terang SELALU terlihat, makin cerah saat hover
+            g2.setColor(new Color(255, 255, 255, (int) (90 + 90 * hoverT)));
+            g2.setStroke(new BasicStroke(1.3f));
+            g2.draw(shape);
+
+            // Highlight tipis di tepi atas (kesan glass, senada PremiumButton)
+            g2.setColor(new Color(255, 255, 255, 45));
+            g2.setStroke(new BasicStroke(1f));
+            g2.drawLine(cardX + 6, cardY + 2, cardX + cardW - 6, cardY + 2);
 
             g2.setFont(getFont());
-            g2.setColor(hover ? TEXT_PRIMARY : TEXT_SECONDARY);
-            g2.drawString(text, 0, 0);
+            FontMetrics fm = g2.getFontMetrics();
+            String full = ARROW + " " + label;
+            int tx = cardX + (cardW - fm.stringWidth(full)) / 2;
+            int ty = cardY + (cardH + fm.getAscent()) / 2 - 3;
 
-            if (hover) {
-                int textWidth = g2.getFontMetrics().stringWidth(text);
-                g2.setColor(new Color(255, 255, 255, 160));
-                g2.drawLine(0, 5, textWidth, 5);
-            }
+            g2.setColor(new Color(0, 0, 0, 150));
+            g2.drawString(full, tx + 1, ty + 1);
+            g2.setColor(new Color(235, 235, 235));
+            g2.drawString(full, tx, ty);
 
             g2.dispose();
         }

@@ -6,6 +6,7 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
+import java.awt.geom.RoundRectangle2D;
 
 
 public class Input2PPanel extends JPanel {
@@ -92,34 +93,20 @@ public class Input2PPanel extends JPanel {
     //  HEADER: Tombol Kembali + Judul
     // =========================================================
     private JPanel buildHeaderPanel(MainFrame parent) {
-        JPanel wrapper = new JPanel(new BorderLayout());
+        JPanel wrapper = new JPanel();
         wrapper.setOpaque(false);
+        wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
 
-        JButton btnBack = new JButton("\u2190 KEMBALI");
-        btnBack.setFont(new Font("Arial", Font.PLAIN, 14));
-        btnBack.setForeground(new Color(40, 40, 40));
-        btnBack.setContentAreaFilled(false);
-        btnBack.setBorderPainted(false);
-        btnBack.setFocusPainted(false);
-        btnBack.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btnBack.setBorder(new EmptyBorder(16, 18, 0, 0));
-        btnBack.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseEntered(MouseEvent e) {
-                btnBack.setText("<html><u>\u2190 KEMBALI</u></html>");
-            }
-
-            @Override
-            public void mouseExited(MouseEvent e) {
-                btnBack.setText("\u2190 KEMBALI");
-            }
-        });
-        btnBack.addActionListener(e -> parent.showView("MENU_UTAMA"));
+        MinimalBackButton btnBack = new MinimalBackButton("KEMBALI", () -> parent.showView("MENU_UTAMA"));
+        JPanel topRow = new JPanel(new BorderLayout());
+        topRow.setOpaque(false);
+        topRow.add(btnBack, BorderLayout.WEST);
 
         JPanel titleBox = new JPanel();
         titleBox.setOpaque(false);
         titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
-        titleBox.setBorder(new EmptyBorder(30, 10, 6, 10));
+        titleBox.setAlignmentX(Component.CENTER_ALIGNMENT);
+        titleBox.setBorder(new EmptyBorder(14, 10, 6, 10));
 
         JLabel sub = new JLabel("PERSIAPAN MODE DUEL");
         sub.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -134,8 +121,8 @@ public class Input2PPanel extends JPanel {
         titleBox.add(sub);
         titleBox.add(title);
 
-        wrapper.add(btnBack, BorderLayout.WEST);
-        wrapper.add(titleBox, BorderLayout.CENTER);
+        wrapper.add(topRow);
+        wrapper.add(titleBox);
         return wrapper;
     }
 
@@ -408,6 +395,121 @@ public class Input2PPanel extends JPanel {
 
             setForeground(Color.WHITE);
             super.paintComponent(g);
+        }
+    }
+
+    // =========================================================
+    //  KOMPONEN KUSTOM: Tombol kembali "← KEMBALI" gaya kartu gelap (SAMA PERSIS di semua halaman)
+    // =========================================================
+    private static class MinimalBackButton extends JComponent {
+        private static final String ARROW = "\u2190";
+        private final String label;
+        private final Runnable action;
+        private float hoverT = 0f;
+        private float pressT = 0f;
+        private boolean hovering = false;
+        private boolean pressed = false;
+        private final Timer animTimer;
+
+        MinimalBackButton(String label, Runnable action) {
+            this.label = label;
+            this.action = action;
+            setOpaque(false);
+            setFont(new Font("Arial", Font.BOLD, 13));
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+            setBorder(new EmptyBorder(16, 16, 8, 8));
+            setPreferredSize(new Dimension(164, 58));
+            setMaximumSize(new Dimension(174, 58));
+
+            addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    hovering = true;
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    hovering = false;
+                    pressed = false;
+                }
+
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    pressed = true;
+                }
+
+                @Override
+                public void mouseReleased(MouseEvent e) {
+                    boolean wasPressed = pressed;
+                    pressed = false;
+                    if (wasPressed && contains(e.getPoint())) {
+                        action.run();
+                    }
+                }
+            });
+
+            animTimer = new Timer(16, e -> {
+                float hoverTarget = hovering ? 1f : 0f;
+                float pressTarget = pressed ? 1f : 0f;
+                hoverT += (hoverTarget - hoverT) * 0.2f;
+                pressT += (pressTarget - pressT) * 0.35f;
+                repaint();
+            });
+            animTimer.start();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+            Insets in = getInsets();
+            int cardX = in.left;
+            int cardY = in.top;
+            int cardW = getWidth() - in.left - in.right;
+            int cardH = getHeight() - in.top - in.bottom;
+
+            float scale = 1f - pressT * 0.035f;
+            double cx = cardX + cardW / 2.0;
+            double cy = cardY + cardH / 2.0;
+            g2.translate(cx, cy);
+            g2.scale(scale, scale);
+            g2.translate(-cx, -cy);
+
+            int arc = Math.min(16, cardH / 2);
+            RoundRectangle2D shape = new RoundRectangle2D.Float(cardX, cardY, cardW, cardH, arc, arc);
+
+            // Bayangan tipis di bawah kartu (depth)
+            g2.setColor(new Color(0, 0, 0, 90));
+            g2.fill(new RoundRectangle2D.Float(cardX + 1, cardY + 3, cardW, cardH, arc, arc));
+
+            // Isi kartu GELAP SOLID -- selalu sama warnanya di background apa pun
+            g2.setColor(new Color(22, 22, 24, (int) (215 + 20 * hoverT)));
+            g2.fill(shape);
+
+            // Border terang SELALU terlihat, makin cerah saat hover
+            g2.setColor(new Color(255, 255, 255, (int) (90 + 90 * hoverT)));
+            g2.setStroke(new BasicStroke(1.3f));
+            g2.draw(shape);
+
+            // Highlight tipis di tepi atas (kesan glass, senada PremiumButton)
+            g2.setColor(new Color(255, 255, 255, 45));
+            g2.setStroke(new BasicStroke(1f));
+            g2.drawLine(cardX + 6, cardY + 2, cardX + cardW - 6, cardY + 2);
+
+            g2.setFont(getFont());
+            FontMetrics fm = g2.getFontMetrics();
+            String full = ARROW + " " + label;
+            int tx = cardX + (cardW - fm.stringWidth(full)) / 2;
+            int ty = cardY + (cardH + fm.getAscent()) / 2 - 3;
+
+            g2.setColor(new Color(0, 0, 0, 150));
+            g2.drawString(full, tx + 1, ty + 1);
+            g2.setColor(new Color(235, 235, 235));
+            g2.drawString(full, tx, ty);
+
+            g2.dispose();
         }
     }
 }

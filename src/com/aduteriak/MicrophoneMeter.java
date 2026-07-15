@@ -21,28 +21,28 @@ public class MicrophoneMeter {
 
     // ===== PARAMETER TUNING =====
     // --- SETTING SEDIKIT BERAT (RESPONSIF) ---
-//    private static final double NOISE_GATE_THRESHOLD = 0.05; // Lebih sensitif (suara pelan masuk)
-//    private static final double VOLUME_GAIN = 1.0;
-//    private static final double MAX_EXPECTED_RMS = 0.35;
-//    private static final double POWER_FACTOR = 1.8;          // Tidak terlalu berat di awal
-//    private static final double SMOOTHING_FACTOR = 0.4;      // Jauh lebih responsif (bar naik turun cepat)
-//    private static final double WEIGHT_RMS = 0.4;            // Volume lebih berpengaruh
-//    private static final double WEIGHT_FREQUENCY = 0.6;
-//    private static final double MIN_SHRIEK_FREQ = 600.0;     // Range lebih luas (suara cowok masuk)
-//    private static final double MAX_SHRIEK_FREQ = 5000.0;
-//    private static final double TYPICAL_SCREAM_MAGNITUDE = 0.15; // Lebih mudah mencapai energi maksimal
+    private static final double NOISE_GATE_THRESHOLD = 0.05; // Lebih sensitif (suara pelan masuk)
+    private static final double VOLUME_GAIN = 1.0;
+    private static final double MAX_EXPECTED_RMS = 0.35;
+    private static final double POWER_FACTOR = 1.8;          // Tidak terlalu berat di awal
+    private static final double SMOOTHING_FACTOR = 0.4;      // Jauh lebih responsif (bar naik turun cepat)
+    private static final double WEIGHT_RMS = 0.4;            // Volume lebih berpengaruh
+    private static final double WEIGHT_FREQUENCY = 0.6;
+    private static final double MIN_SHRIEK_FREQ = 600.0;     // Range lebih luas (suara cowok masuk)
+    private static final double MAX_SHRIEK_FREQ = 5000.0;
+    private static final double TYPICAL_SCREAM_MAGNITUDE = 0.15; // Lebih mudah mencapai energi maksimal
 
     // --- SETTING BERAT BANGET (HARDCORE) ---
-    private static final double NOISE_GATE_THRESHOLD = 0.12; // Harus kencang dulu baru bar mau gerak
-    private static final double VOLUME_GAIN = 1.0;
-    private static final double MAX_EXPECTED_RMS = 0.50;
-    private static final double POWER_FACTOR = 3.5;          // Sangat berat, butuh tenaga ekstra di akhir
-    private static final double SMOOTHING_FACTOR = 0.2;      // Agak "berat" gerakannya, harus ditahan teriaknya
-    private static final double WEIGHT_RMS = 0.2;            // Suara ngebass/volume doang nggak guna
-    private static final double WEIGHT_FREQUENCY = 0.8;      // WAJIB melengking (High pitch)
-    private static final double MIN_SHRIEK_FREQ = 1000.0;    // Fokus ke frekuensi tinggi saja
-    private static final double MAX_SHRIEK_FREQ = 6000.0;
-    private static final double TYPICAL_SCREAM_MAGNITUDE = 0.35; // Butuh energi FFT yang sangat besar
+//    private static final double NOISE_GATE_THRESHOLD = 0.12; // Harus kencang dulu baru bar mau gerak
+//    private static final double VOLUME_GAIN = 1.0;
+//    private static final double MAX_EXPECTED_RMS = 0.50;
+//    private static final double POWER_FACTOR = 3.5;          // Sangat berat, butuh tenaga ekstra di akhir
+//    private static final double SMOOTHING_FACTOR = 0.2;      // Agak "berat" gerakannya, harus ditahan teriaknya
+//    private static final double WEIGHT_RMS = 0.2;            // Suara ngebass/volume doang nggak guna
+//    private static final double WEIGHT_FREQUENCY = 0.8;      // WAJIB melengking (High pitch)
+//    private static final double MIN_SHRIEK_FREQ = 1000.0;    // Fokus ke frekuensi tinggi saja
+//    private static final double MAX_SHRIEK_FREQ = 6000.0;
+//    private static final double TYPICAL_SCREAM_MAGNITUDE = 0.35; // Butuh energi FFT yang sangat besar
 
     // --- SETTING BERAT BANGET (ULTRA HARDCORE) ---
 //    private static final double NOISE_GATE_THRESHOLD = 0.20;      // Naikkan! Suara bicara keras tidak akan menggerakkan bar
