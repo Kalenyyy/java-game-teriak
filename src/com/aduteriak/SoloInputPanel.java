@@ -10,48 +10,99 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
 
+/**
+ * SoloInputPanel.java
+ *
+ * Didesain ulang mengikuti komposisi foto referensi: sebuah panel kaca
+ * hologram "SOLO MODE REGISTRATION" yang mengambang di sisi KANAN layar,
+ * lengkap dengan bar input bergaya HUD, bracket judul "[ ... ]", aksen
+ * sudut viewfinder, dan tombol aksi ber-glow.
+ *
+ * Area "USERNAME" pada foto sengaja DITUTUP oleh kartu kaca kode ini, lalu
+ * input field asli (HoloTextField) diletakkan tepat di posisi tersebut —
+ * sehingga yang tampil ke pengguna adalah kontrol sungguhan, bukan gambar
+ * placeholder pada foto.
+ *
+ * Posisi kartu dihitung berbasis PERSENTASE ukuran panel (bukan pixel
+ * tetap) via override doLayout(), supaya tetap presisi menempel di zona
+ * yang sama pada foto di berbagai ukuran window.
+ */
 public class SoloInputPanel extends JPanel {
 
-    // Taruh file foto asset di path ini (relatif terhadap classpath / resources root):
-    // src/main/resources/assets/images/solo_input_background.png
-    private static final String BACKGROUND_RESOURCE_PATH = "/assets/images/alex.jpeg";
+    private static final String BACKGROUND_RESOURCE_PATH = "/assets/images/solo_input.jpeg";
 
-    // ---- Warna teks (dipasangkan dengan outline gelap agar tidak pernah "menyatu" ----
-    // ---- dengan bagian gambar yang kebetulan terang di titik yang sama)             ----
-    private static final Color TITLE_COLOR = new Color(255, 255, 255);
-    private static final Color SUBTITLE_COLOR = new Color(225, 225, 225);
-    private static final Color FIELD_LABEL_COLOR = new Color(230, 230, 230);
-    private static final Color TEXT_OUTLINE_COLOR = new Color(0, 0, 0, 235);
+    // ---- Palet warna hologram (cyan dingin + aksen magenta lembut, senada foto) ----
+    private static final Color HOLO_CYAN = new Color(150, 215, 255);
+    private static final Color HOLO_CYAN_SOFT = new Color(150, 215, 255, 90);
+    private static final Color HOLO_CYAN_DIM = new Color(120, 170, 200, 130);
+    private static final Color HOLO_MAGENTA = new Color(210, 150, 230);
+    private static final Color GLASS_FILL = new Color(8, 14, 22, 150);
+    private static final Color GLASS_FILL_FOCUS = new Color(10, 22, 34, 205);
+    private static final Color TEXT_TITLE = new Color(235, 245, 255);
+    private static final Color TEXT_LABEL = new Color(190, 210, 225);
+    private static final Color TEXT_FIELD = new Color(230, 245, 255);
 
-    // ---- Scrim: penggelap tipis di zona header & footer supaya teks & tombol ----
-    // ---- selalu punya latar yang cukup gelap, terlepas dari isi foto di titik itu ----
-    private static final Color SCRIM_COLOR = new Color(0, 0, 0);
-    private static final float SCRIM_TOP_HEIGHT_RATIO = 0.30f;
-    private static final float SCRIM_BOTTOM_HEIGHT_RATIO = 0.26f;
-    private static final int SCRIM_TOP_ALPHA = 165;
-    private static final int SCRIM_BOTTOM_ALPHA = 170;
+    // ---- Scrim tipis hanya untuk area pojok kiri-atas (tombol kembali) ----
+    private static final float SCRIM_TOP_HEIGHT_RATIO = 0.16f;
+    private static final int SCRIM_TOP_ALPHA = 140;
 
     private BufferedImage backgroundImage;
 
-    private float entranceAlpha = 1f; // 1 = gelap penuh, 0 = transparan (reveal selesai)
+    private float entranceAlpha = 1f;
     private Timer entranceTimer;
 
+    private MinimalBackButton backButton;
+    private HoloCard holoCard;
+
     public SoloInputPanel(MainFrame parent) {
-        setLayout(new BorderLayout());
+        setLayout(null);
         setOpaque(true);
 
         loadBackgroundImage();
 
-        add(buildHeaderPanel(parent), BorderLayout.NORTH);
-        add(buildCenterPanel(parent), BorderLayout.CENTER);
-        add(buildFooterPanel(parent), BorderLayout.SOUTH);
+        backButton = new MinimalBackButton("KEMBALI", () -> parent.showView("MENU_UTAMA"));
+        holoCard = buildHoloCard(parent);
+
+        add(backButton);
+        add(holoCard);
 
         startEntranceAnimation();
     }
 
     // =========================================================
-    //  LATAR BELAKANG (Gambar, cover-fit, senada Main Menu)
+    //  LAYOUT PROPORSIONAL — kartu ditempatkan mengikuti zona
+    //  panel hologram pada foto (sisi kanan layar)
+    // =========================================================
+    @Override
+    public void doLayout() {
+        int w = getWidth();
+        int h = getHeight();
+        if (w <= 0 || h <= 0) return;
+
+        Dimension backPref = backButton.getPreferredSize();
+        backButton.setBounds(16, 16, backPref.width, backPref.height);
+
+        int cardW = Math.max(340, Math.round(w * 0.38f));
+        int cardH = Math.max(380, Math.round(h * 0.45f));
+        int cardX = Math.round(w * 0.50f);
+        int cardY = Math.round(h * 0.15f);
+
+        if (cardX + cardW > w - 12) {
+            cardX = Math.max(12, w - cardW - 12);
+        }
+        if (cardY + cardH > h - 12) {
+            cardY = Math.max(12, h - cardH - 12);
+        }
+
+        holoCard.setBounds(cardX, cardY, cardW, cardH);
+    }
+
+    // =========================================================
+    //  LATAR BELAKANG (Gambar, cover-fit)
     // =========================================================
     private void loadBackgroundImage() {
         try (InputStream in = openBackgroundResourceStream()) {
@@ -82,11 +133,10 @@ public class SoloInputPanel extends JPanel {
         int h = getHeight();
 
         drawBackgroundCover(g2, w, h);
-        drawReadabilityScrim(g2, w, h);
+        drawTopScrim(g2, w, h);
 
         g2.dispose();
 
-        // Overlay fade-in dari hitam pekat -> transparan saat panel baru dibuka
         if (entranceAlpha > 0f) {
             Graphics2D gf = (Graphics2D) g.create();
             gf.setColor(new Color(0, 0, 0, (int) (entranceAlpha * 255)));
@@ -95,11 +145,6 @@ public class SoloInputPanel extends JPanel {
         }
     }
 
-    /**
-     * Menggambar backgroundImage agar selalu memenuhi seluruh panel tanpa
-     * distorsi (perilaku "cover" seperti CSS background-size: cover).
-     * Kelebihan area akan di-crop, bukan di-stretch.
-     */
     private void drawBackgroundCover(Graphics2D g2, int panelWidth, int panelHeight) {
         if (backgroundImage == null || panelWidth <= 0 || panelHeight <= 0) {
             g2.setColor(Color.BLACK);
@@ -124,32 +169,14 @@ public class SoloInputPanel extends JPanel {
         g2.drawImage(backgroundImage, drawX, drawY, scaledWidth, scaledHeight, null);
     }
 
-    /**
-     * Menggelapkan tipis zona atas (judul) dan bawah (tombol) dengan gradient,
-     * supaya teks & kontrol selalu punya latar yang cukup gelap tanpa
-     * menutupi keseluruhan artwork di bagian tengah panel.
-     */
-    private void drawReadabilityScrim(Graphics2D g2, int w, int h) {
+    private void drawTopScrim(Graphics2D g2, int w, int h) {
         int topHeight = Math.round(h * SCRIM_TOP_HEIGHT_RATIO);
         Paint topScrim = new GradientPaint(
-                0, 0, withAlpha(SCRIM_COLOR, SCRIM_TOP_ALPHA),
-                0, topHeight, withAlpha(SCRIM_COLOR, 0)
+                0, 0, new Color(0, 0, 0, SCRIM_TOP_ALPHA),
+                0, topHeight, new Color(0, 0, 0, 0)
         );
         g2.setPaint(topScrim);
         g2.fillRect(0, 0, w, topHeight);
-
-        int bottomHeight = Math.round(h * SCRIM_BOTTOM_HEIGHT_RATIO);
-        int bottomStart = h - bottomHeight;
-        Paint bottomScrim = new GradientPaint(
-                0, bottomStart, withAlpha(SCRIM_COLOR, 0),
-                0, h, withAlpha(SCRIM_COLOR, SCRIM_BOTTOM_ALPHA)
-        );
-        g2.setPaint(bottomScrim);
-        g2.fillRect(0, bottomStart, w, bottomHeight);
-    }
-
-    private static Color withAlpha(Color base, int alpha) {
-        return new Color(base.getRed(), base.getGreen(), base.getBlue(), alpha);
     }
 
     private void startEntranceAnimation() {
@@ -165,98 +192,80 @@ public class SoloInputPanel extends JPanel {
     }
 
     // =========================================================
-    //  HEADER: Tombol Kembali + Judul
+    //  FONT — teknis / futuristik, dengan fallback aman
     // =========================================================
-    private JPanel buildHeaderPanel(MainFrame parent) {
-        JPanel wrapper = new JPanel();
-        wrapper.setOpaque(false);
-        wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
-
-        MinimalBackButton btnBack = new MinimalBackButton("KEMBALI", () -> parent.showView("MENU_UTAMA"));
-        JPanel topRow = new JPanel(new BorderLayout());
-        topRow.setOpaque(false);
-        topRow.add(btnBack, BorderLayout.WEST);
-
-        JPanel titleBox = new JPanel();
-        titleBox.setOpaque(false);
-        titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
-        titleBox.setAlignmentX(Component.CENTER_ALIGNMENT);
-        titleBox.setBorder(new EmptyBorder(14, 10, 6, 10));
-
-
-
-        JLabel title = new OutlinedLabel("MASUKKAN NAMAMU", TITLE_COLOR, TEXT_OUTLINE_COLOR, 2);
-        title.setAlignmentX(Component.CENTER_ALIGNMENT);
-        title.setFont(pickTitleFont(38));
-
-        titleBox.add(title);
-
-        wrapper.add(topRow);
-        wrapper.add(titleBox);
-        return wrapper;
-    }
-
-    private Font pickTitleFont(int size) {
-        String[] candidates = {"Impact", "Arial Black", "Haettenschweiler", "Arial"};
+    private static Font pickTechFont(int size, int style) {
+        String[] candidates = {"Orbitron", "Rajdhani", "Exo 2", "Eurostile", "Consolas", "Segoe UI Semibold", "Arial"};
         String[] available = GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames();
-        java.util.List<String> availableList = java.util.Arrays.asList(available);
+        List<String> availableList = Arrays.asList(available);
         for (String name : candidates) {
             if (availableList.contains(name)) {
-                int style = name.equals("Arial") ? Font.BOLD : Font.PLAIN;
                 return new Font(name, style, size);
             }
         }
-        return new Font("SansSerif", Font.BOLD, size);
+        return new Font(Font.MONOSPACED, style, size);
     }
 
     // =========================================================
-    //  CENTER: Form Nama Pemain (satu kolom, tanpa badge VS)
+    //  KARTU HOLOGRAM — menggantikan zona "USERNAME" pada foto
     // =========================================================
-    private JPanel buildCenterPanel(MainFrame parent) {
-        JPanel wrapper = new JPanel(new GridBagLayout());
-        wrapper.setOpaque(false);
+    private HoloCard buildHoloCard(MainFrame parent) {
+        HoloCard card = new HoloCard();
+        card.setLayout(new GridBagLayout());
 
-        JPanel formBox = new JPanel();
-        formBox.setOpaque(false);
-        formBox.setLayout(new BoxLayout(formBox, BoxLayout.Y_AXIS));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
+        int row = 0;
 
-        JLabel lbl = buildFieldLabel("NAMA PEMAIN");
-        RoundedTextField field = new RoundedTextField("Pemain");
+        gbc.gridy = row++;
+        gbc.insets = new Insets(30, 26, 4, 26);
+        TechLabel title = new TechLabel("MASUKKAN NAMAMU", TEXT_TITLE, HOLO_CYAN, true, 3.5f);
+        title.setFont(pickTechFont(22, Font.BOLD));
+        card.add(title, gbc);
 
-        formBox.add(lbl);
-        formBox.add(Box.createRigidArea(new Dimension(0, 6)));
-        formBox.add(field);
+        gbc.gridy = row++;
+        gbc.insets = new Insets(6, 26, 22, 26);
+        TechLabel sub = new TechLabel("SOLO MODE REGISTRATION", HOLO_CYAN_DIM, HOLO_CYAN_DIM, false, 2.2f);
+        sub.setFont(pickTechFont(12, Font.PLAIN));
+        card.add(sub, gbc);
 
-        // Simpan referensi field lewat client property untuk dipakai tombol MULAI di footer
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 26, 6, 26);
+        TechLabel fieldLabel = new TechLabel("NAMA PEMAIN", TEXT_LABEL, TEXT_LABEL, false, 2.5f);
+        fieldLabel.setFont(pickTechFont(12, Font.BOLD));
+        card.add(fieldLabel, gbc);
+
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 26, 22, 26);
+        HoloTextField field = new HoloTextField("Pemain");
+        field.setFont(pickTechFont(16, Font.BOLD));
+        card.add(field, gbc);
         this.putClientProperty("field", field);
 
-        wrapper.add(formBox);
-        return wrapper;
-    }
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 26, 26, 26);
+        TechLabel modeRow = new TechLabel("SELECT MODE : SOLO", HOLO_CYAN_DIM, HOLO_CYAN_DIM, false, 2.2f);
+        modeRow.setFont(pickTechFont(12, Font.PLAIN));
+        card.add(modeRow, gbc);
 
-    private JLabel buildFieldLabel(String text) {
-        JLabel lbl = new OutlinedLabel(text, FIELD_LABEL_COLOR, TEXT_OUTLINE_COLOR, 1);
-        lbl.setAlignmentX(Component.CENTER_ALIGNMENT);
-        lbl.setFont(new Font("Arial", Font.BOLD, 13));
-        return lbl;
-    }
+        gbc.gridy = row++;
+        gbc.weighty = 1.0;
+        gbc.fill = GridBagConstraints.BOTH;
+        JPanel flexSpacer = new JPanel();
+        flexSpacer.setOpaque(false);
+        card.add(flexSpacer, gbc);
 
-    // =========================================================
-    //  FOOTER: Tombol MULAI TERIAK
-    // =========================================================
-    private JPanel buildFooterPanel(MainFrame parent) {
-        JPanel panel = new JPanel();
-        panel.setOpaque(false);
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(new EmptyBorder(20, 0, 34, 0));
-
-        GlowButton btnStart = new GlowButton("MULAI TERIAK");
-        btnStart.setAlignmentX(Component.CENTER_ALIGNMENT);
-        btnStart.setMaximumSize(new Dimension(280, 54));
-
+        gbc.gridy = row;
+        gbc.weighty = 0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(0, 26, 30, 26);
+        HoloButton btnStart = new HoloButton("MULAI TERIAK");
+        btnStart.setPreferredSize(new Dimension(100, 54));
         btnStart.addActionListener(e -> {
-            RoundedTextField field = (RoundedTextField) getClientProperty("field");
-            String name = field.getText().trim();
+            HoloTextField f = (HoloTextField) getClientProperty("field");
+            String name = f.getText().trim();
             if (name.isEmpty() || name.equals("Pemain")) {
                 name = "Pemain";
             }
@@ -269,25 +278,161 @@ public class SoloInputPanel extends JPanel {
 
             parent.startGame();
         });
+        card.add(btnStart, gbc);
 
-        panel.add(btnStart);
-        return panel;
+        return card;
     }
 
     // =========================================================
-    //  LABEL DENGAN OUTLINE (agar teks tidak pernah menyatu dengan gambar)
-    //  Isi terang menjamin kontras di area gelap, outline gelap menjamin
-    //  kontras di area terang (mis. wisp energi putih pada foto).
+    //  KARTU KACA HOLOGRAM
+    //  - background glass gelap translusen
+    //  - border ber-"nafas" (breathing glow)
+    //  - garis header + chevron ala HUD
+    //  - aksen bracket di 4 sudut (viewfinder style)
+    //  - scanline yang menyapu turun terus-menerus
+    //  - one-shot wipe-reveal saat kartu pertama muncul
     // =========================================================
-    private static class OutlinedLabel extends JLabel {
-        private final Color outlineColor;
-        private final int outlineThickness;
+    private static class HoloCard extends JPanel {
+        private static final int FRAME_MS = 16;
 
-        OutlinedLabel(String text, Color fillColor, Color outlineColor, int outlineThickness) {
+        private float scanPhase = 0f;
+        private float breathePhase = 0f;
+        private float wipeProgress = 0f;
+        private final Timer fxTimer;
+
+        HoloCard() {
+            setOpaque(false);
+            setBorder(new EmptyBorder(0, 0, 0, 0));
+
+            fxTimer = new Timer(FRAME_MS, e -> {
+                scanPhase += 0.0045f;
+                if (scanPhase > 1.15f) scanPhase = -0.15f;
+                breathePhase += 0.03f;
+                if (wipeProgress < 1f) {
+                    wipeProgress = Math.min(1f, wipeProgress + 0.045f);
+                }
+                repaint();
+            });
+            fxTimer.start();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            int w = getWidth();
+            int h = getHeight();
+            if (w <= 0 || h <= 0) return;
+
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            // one-shot wipe reveal: kartu "terbuka" dari kiri ke kanan saat muncul
+            if (wipeProgress < 1f) {
+                g2.setClip(0, 0, Math.round(w * wipeProgress), h);
+            }
+
+            RoundRectangle2D shape = new RoundRectangle2D.Float(0, 0, w, h, 14, 14);
+
+            // bayangan lembut
+            g2.setColor(new Color(0, 0, 0, 120));
+            g2.fill(new RoundRectangle2D.Float(3, 6, w, h, 14, 14));
+
+            // isi kaca gelap
+            g2.setColor(GLASS_FILL);
+            g2.fill(shape);
+
+            // scanline yang menyapu turun terus-menerus
+            paintScanline(g2, shape, w, h);
+
+            // border ber-nafas
+            float breathe = 0.6f + 0.4f * (float) (0.5 + 0.5 * Math.sin(breathePhase));
+            g2.setStroke(new BasicStroke(1.4f));
+            g2.setColor(new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(),
+                    (int) (140 * breathe)));
+            g2.draw(shape);
+
+            // header: chevron + garis tipis
+            paintHeaderDecor(g2, w);
+
+            // aksen sudut ala viewfinder
+            paintCornerBrackets(g2, w, h);
+
+            g2.dispose();
+
+            super.paintComponent(g);
+        }
+
+        private void paintScanline(Graphics2D g2, Shape clipShape, int w, int h) {
+            Shape oldClip = g2.getClip();
+            g2.clip(clipShape);
+
+            float y = h * scanPhase;
+            float bandH = Math.max(10f, h * 0.10f);
+            GradientPaint band = new GradientPaint(
+                    0, y - bandH / 2f, new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), 0),
+                    0, y, new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), 55)
+            );
+            g2.setPaint(band);
+            g2.fillRect(0, (int) (y - bandH / 2f), w, (int) (bandH / 2f));
+
+            GradientPaint band2 = new GradientPaint(
+                    0, y, new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), 55),
+                    0, y + bandH / 2f, new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), 0)
+            );
+            g2.setPaint(band2);
+            g2.fillRect(0, (int) y, w, (int) (bandH / 2f));
+
+            g2.setClip(oldClip);
+        }
+
+        private void paintHeaderDecor(Graphics2D g2, int w) {
+            g2.setColor(HOLO_CYAN_SOFT);
+            g2.setStroke(new BasicStroke(1.6f));
+            g2.drawString("\u00BB\u00BB\u00BB", 14, 20);
+
+            g2.setStroke(new BasicStroke(1f));
+            g2.setColor(new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), 90));
+            g2.drawLine(70, 14, w - 24, 14);
+        }
+
+        private void paintCornerBrackets(Graphics2D g2, int w, int h) {
+            int len = 16;
+            int pad = 6;
+            g2.setStroke(new BasicStroke(2f));
+            g2.setColor(new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), 200));
+
+            // kiri-atas
+            g2.drawLine(pad, pad, pad + len, pad);
+            g2.drawLine(pad, pad, pad, pad + len);
+            // kanan-atas
+            g2.drawLine(w - pad, pad, w - pad - len, pad);
+            g2.drawLine(w - pad, pad, w - pad, pad + len);
+            // kiri-bawah
+            g2.drawLine(pad, h - pad, pad + len, h - pad);
+            g2.drawLine(pad, h - pad, pad, h - pad - len);
+            // kanan-bawah
+            g2.drawLine(w - pad, h - pad, w - pad - len, h - pad);
+            g2.drawLine(w - pad, h - pad, w - pad, h - pad - len);
+        }
+    }
+
+    // =========================================================
+    //  LABEL TEKNIS — letter-spacing manual + opsi bracket "[ ]"
+    //  agar terasa senada dengan tipografi HUD pada foto
+    // =========================================================
+    private static class TechLabel extends JLabel {
+        private final Color glowColor;
+        private final boolean brackets;
+        private final float letterSpacing;
+
+        TechLabel(String text, Color fg, Color glowColor, boolean brackets, float letterSpacing) {
             super(text);
-            this.outlineColor = outlineColor;
-            this.outlineThickness = outlineThickness;
-            setForeground(fillColor);
+            this.glowColor = glowColor;
+            this.brackets = brackets;
+            this.letterSpacing = letterSpacing;
+            setForeground(fg);
+            setOpaque(false);
+            setHorizontalAlignment(SwingConstants.CENTER);
+            setPreferredSize(new Dimension(10, 22));
         }
 
         @Override
@@ -297,44 +442,71 @@ public class SoloInputPanel extends JPanel {
             g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             g2.setFont(getFont());
 
-            String text = getText();
             FontMetrics fm = g2.getFontMetrics();
-            int textX = (getWidth() - fm.stringWidth(text)) / 2;
-            int textY = (getHeight() + fm.getAscent() - fm.getDescent()) / 2;
+            String text = getText();
 
-            g2.setColor(outlineColor);
-            for (int dx = -outlineThickness; dx <= outlineThickness; dx++) {
-                for (int dy = -outlineThickness; dy <= outlineThickness; dy++) {
-                    if (dx == 0 && dy == 0) continue;
-                    g2.drawString(text, textX + dx, textY + dy);
-                }
+            String left = brackets ? "[  " : "";
+            String right = brackets ? "  ]" : "";
+            float bracketW = brackets ? fm.stringWidth(left) + fm.stringWidth(right) : 0f;
+            float textW = trackedWidth(fm, text, letterSpacing);
+            float totalW = textW + bracketW;
+
+            float x = (getWidth() - totalW) / 2f;
+            int y = (getHeight() + fm.getAscent() - fm.getDescent()) / 2;
+
+            if (brackets) {
+                g2.setColor(glowColor);
+                g2.drawString(left, x, y);
+                x += fm.stringWidth(left);
             }
 
             g2.setColor(getForeground());
-            g2.drawString(text, textX, textY);
+            for (int i = 0; i < text.length(); i++) {
+                String ch = String.valueOf(text.charAt(i));
+                g2.drawString(ch, x, y);
+                x += fm.stringWidth(ch) + letterSpacing;
+            }
+
+            if (brackets) {
+                g2.setColor(glowColor);
+                g2.drawString(right, x - letterSpacing, y);
+            }
 
             g2.dispose();
+        }
+
+        private static float trackedWidth(FontMetrics fm, String text, float spacing) {
+            float w = 0f;
+            for (int i = 0; i < text.length(); i++) {
+                w += fm.stringWidth(String.valueOf(text.charAt(i))) + spacing;
+            }
+            return Math.max(0f, w - spacing);
         }
     }
 
     // =========================================================
-    //  KOMPONEN KUSTOM: Kolom nama dengan glow saat fokus
+    //  INPUT FIELD HOLOGRAM — menggantikan bar "USERNAME" pada foto
     // =========================================================
-    private static class RoundedTextField extends JTextField {
+    private static class HoloTextField extends JTextField {
         private boolean focused = false;
+        private float glowPhase = 0f;
+        private final Timer glowTimer;
 
-        RoundedTextField(String defaultText) {
+        HoloTextField(String defaultText) {
             super(defaultText);
-            setFont(new Font("Arial", Font.BOLD, 16));
-            setForeground(new Color(30, 30, 30));
-            setCaretColor(new Color(30, 30, 30));
-            setSelectionColor(new Color(0, 0, 0, 40));
+            setForeground(TEXT_FIELD);
+            setCaretColor(HOLO_CYAN);
+            setSelectionColor(new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), 70));
             setHorizontalAlignment(JTextField.CENTER);
             setOpaque(false);
-            setBorder(new EmptyBorder(10, 14, 10, 14));
-            setMaximumSize(new Dimension(300, 46));
-            setPreferredSize(new Dimension(300, 46));
-            setAlignmentX(Component.CENTER_ALIGNMENT);
+            setBorder(new EmptyBorder(12, 16, 12, 16));
+            setPreferredSize(new Dimension(10, 50));
+
+            glowTimer = new Timer(16, e -> {
+                glowPhase += 0.04f;
+                repaint();
+            });
+            glowTimer.start();
 
             addFocusListener(new FocusAdapter() {
                 @Override
@@ -360,20 +532,33 @@ public class SoloInputPanel extends JPanel {
             int w = getWidth();
             int h = getHeight();
 
-            // Glow lembut saat fokus (beberapa lapis rounded rect dengan alpha menurun)
             if (focused) {
+                float breathe = 0.65f + 0.35f * (float) (0.5 + 0.5 * Math.sin(glowPhase));
                 for (int i = 3; i >= 1; i--) {
-                    g2.setColor(new Color(255, 255, 255, 28 / i));
-                    g2.fillRoundRect(-i * 2, -i * 2, w + i * 4, h + i * 4, 16 + i * 2, 16 + i * 2);
+                    int alpha = (int) (34 * breathe / i);
+                    g2.setColor(new Color(HOLO_MAGENTA.getRed(), HOLO_MAGENTA.getGreen(), HOLO_MAGENTA.getBlue(), alpha));
+                    g2.fillRoundRect(-i * 2, -i * 2, w + i * 4, h + i * 4, 10 + i * 2, 10 + i * 2);
                 }
             }
 
-            g2.setColor(new Color(240, 240, 240, focused ? 235 : 190));
-            g2.fillRoundRect(0, 0, w, h, 14, 14);
+            g2.setColor(focused ? GLASS_FILL_FOCUS : GLASS_FILL);
+            g2.fillRoundRect(0, 0, w, h, 8, 8);
 
-            g2.setColor(focused ? new Color(20, 20, 20) : new Color(180, 180, 180));
-            g2.setStroke(new BasicStroke(focused ? 2f : 1f));
-            g2.drawRoundRect(1, 1, w - 2, h - 2, 14, 14);
+            // tekstur scanline halus di dalam field (kesan hologram)
+            g2.setColor(new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), 18));
+            for (int ly = 6; ly < h; ly += 6) {
+                g2.drawLine(4, ly, w - 4, ly);
+            }
+
+            // aksen bar tegak di kiri, ciri khas input HUD
+            g2.setColor(focused ? HOLO_MAGENTA : HOLO_CYAN_DIM);
+            g2.fillRect(0, 4, 3, h - 8);
+
+            g2.setStroke(new BasicStroke(focused ? 1.8f : 1.2f));
+            g2.setColor(focused
+                    ? new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), 230)
+                    : new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), 110));
+            g2.drawRoundRect(0, 0, w - 1, h - 1, 8, 8);
 
             g2.dispose();
             super.paintComponent(g);
@@ -381,67 +566,103 @@ public class SoloInputPanel extends JPanel {
     }
 
     // =========================================================
-    //  KOMPONEN KUSTOM: Tombol MULAI dengan hover + glow pulsing
+    //  TOMBOL AKSI HOLOGRAM — glass + energy sweep + breathing glow
     // =========================================================
-    private static class GlowButton extends JButton {
-        private boolean hover = false;
-        private float pulse = 0f;
-        private final Timer pulseTimer;
+    private static class HoloButton extends JButton {
+        private static final Random RANDOM = new Random();
 
-        GlowButton(String text) {
-            super(text);
-            setFont(new Font("Arial", Font.BOLD, 19));
+        private boolean hover = false;
+        private float pulsePhase = 0f;
+        private float hoverAnim = 0f;
+        private long streakStart = -1L;
+        private final Timer fxTimer;
+
+        HoloButton(String text) {
+            super("\u25B8  " + text);
             setFocusPainted(false);
             setContentAreaFilled(false);
             setBorderPainted(false);
             setOpaque(false);
             setCursor(new Cursor(Cursor.HAND_CURSOR));
+            setForeground(TEXT_TITLE);
 
             addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseEntered(MouseEvent e) {
                     hover = true;
-                    repaint();
+                    streakStart = System.currentTimeMillis();
                 }
 
                 @Override
                 public void mouseExited(MouseEvent e) {
                     hover = false;
-                    repaint();
                 }
             });
 
-            pulseTimer = new Timer(30, e -> {
-                pulse += 0.05f;
+            fxTimer = new Timer(16, e -> {
+                pulsePhase += 0.045f;
+                float target = hover ? 1f : 0f;
+                hoverAnim += (target - hoverAnim) * 0.18f;
                 repaint();
             });
-            pulseTimer.start();
+            fxTimer.start();
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            return new Dimension(260, 52);
         }
 
         @Override
         protected void paintComponent(Graphics g) {
+            int w = getWidth();
+            int h = getHeight();
+            if (w <= 0 || h <= 0) return;
+
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            int w = getWidth();
-            int h = getHeight();
+            RoundRectangle2D shape = new RoundRectangle2D.Float(0, 0, w, h, 10, 10);
 
-            float glowT = (float) (0.5 + 0.5 * Math.sin(pulse));
-            g2.setColor(new Color(255, 255, 255, (int) (18 + glowT * 22)));
-            g2.fillRoundRect(-4, -4, w + 8, h + 8, 16, 16);
+            float breathe = 0.6f + 0.4f * (float) (0.5 + 0.5 * Math.sin(pulsePhase));
+            int glowAlpha = (int) (60 * breathe + 60 * hoverAnim);
+            g2.setColor(new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(), glowAlpha));
+            g2.fill(new RoundRectangle2D.Float(-4, -4, w + 8, h + 8, 14, 14));
 
-            g2.setColor(hover ? new Color(15, 15, 15) : new Color(30, 30, 30, 235));
-            g2.fillRoundRect(0, 0, w, h, 12, 12);
+            g2.setColor(hover ? new Color(10, 26, 36, 235) : new Color(8, 16, 24, 210));
+            g2.fill(shape);
+
+            if (hover && streakStart >= 0) {
+                long elapsed = System.currentTimeMillis() - streakStart;
+                float t = Math.min(1f, elapsed / 260f);
+                Shape oldClip = g2.getClip();
+                g2.clip(shape);
+                float sx = -h + t * (w + h * 2f);
+                int alpha = (int) (90 * (1f - t));
+                Polygon streak = new Polygon();
+                streak.addPoint((int) sx, -5);
+                streak.addPoint((int) (sx + h * 0.5f), -5);
+                streak.addPoint((int) (sx + h * 0.5f - h), h + 5);
+                streak.addPoint((int) (sx - h), h + 5);
+                g2.setColor(new Color(235, 245, 255, Math.max(0, alpha)));
+                g2.fill(streak);
+                g2.setClip(oldClip);
+            }
+
+            g2.setStroke(new BasicStroke(1.5f));
+            g2.setColor(new Color(HOLO_CYAN.getRed(), HOLO_CYAN.getGreen(), HOLO_CYAN.getBlue(),
+                    (int) (160 + 60 * hoverAnim)));
+            g2.draw(shape);
 
             g2.dispose();
 
-            setForeground(Color.WHITE);
+            setForeground(TEXT_TITLE);
             super.paintComponent(g);
         }
     }
 
     // =========================================================
-    //  KOMPONEN KUSTOM: Tombol kembali "← KEMBALI" gaya kartu gelap (SAMA PERSIS di semua halaman)
+    //  TOMBOL KEMBALI "\u2190 KEMBALI" — konsisten di semua halaman
     // =========================================================
     private static class MinimalBackButton extends JComponent {
         private static final String ARROW = "\u2190";
@@ -522,20 +743,16 @@ public class SoloInputPanel extends JPanel {
             int arc = Math.min(16, cardH / 2);
             RoundRectangle2D shape = new RoundRectangle2D.Float(cardX, cardY, cardW, cardH, arc, arc);
 
-            // Bayangan tipis di bawah kartu (depth)
             g2.setColor(new Color(0, 0, 0, 90));
             g2.fill(new RoundRectangle2D.Float(cardX + 1, cardY + 3, cardW, cardH, arc, arc));
 
-            // Isi kartu GELAP SOLID -- selalu sama warnanya di background apa pun
             g2.setColor(new Color(22, 22, 24, (int) (215 + 20 * hoverT)));
             g2.fill(shape);
 
-            // Border terang SELALU terlihat, makin cerah saat hover
             g2.setColor(new Color(255, 255, 255, (int) (90 + 90 * hoverT)));
             g2.setStroke(new BasicStroke(1.3f));
             g2.draw(shape);
 
-            // Highlight tipis di tepi atas (kesan glass, senada PremiumButton)
             g2.setColor(new Color(255, 255, 255, 45));
             g2.setStroke(new BasicStroke(1f));
             g2.drawLine(cardX + 6, cardY + 2, cardX + cardW - 6, cardY + 2);

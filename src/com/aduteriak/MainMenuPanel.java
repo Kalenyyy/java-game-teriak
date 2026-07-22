@@ -16,40 +16,40 @@ import java.util.Random;
 /**
  * MainMenuPanel.java
  * Halaman Main Menu game "AAAAAAAAAAAA" (voice-powered scream game).
- * Versi JPanel agar bisa ditempel langsung ke MainFrame (CardLayout / showView).
  *
- * Latar belakang menggunakan artwork bitmap (cover-fit, tidak melar) menggantikan
- * ilustrasi stickman yang digambar manual sebelumnya. Tombol menu menggunakan
- * animasi hover cinematic (blade panel + energy wipe) yang diimplementasikan
- * murni dengan Java2D + Swing Timer, tanpa library animasi eksternal.
+ * Latar belakang artwork sudah memuat judul besar "AAAAAAAAAAAA", pola
+ * soundwave simetris yang mengerucut ke satu titik fokus di tengah, serta
+ * podium/console futuristik di bagian bawah. Supaya tidak dobel dan lebih
+ * "menyatu" dengan gambar, judul TIDAK lagi digambar lewat kode — layout
+ * sepenuhnya disusun proporsional (berbasis persentase tinggi panel, via
+ * GridBagLayout weighty) agar elemen UI jatuh tepat di titik-titik fokus
+ * gambar:
+ *   - subtitle kecil  -> tepat di bawah judul besar pada foto
+ *   - menu tombol     -> di titik pertemuan/pusat gelombang (fokus visual)
+ *   - footer          -> menempel dekat area podium/console di bawah
+ *
+ * Ditambahkan cinematic vignette + radial darken di belakang area menu agar
+ * teks & tombol tetap kontras terbaca meski di atas background yang ramai
+ * detail (gelombang, partikel, truss lighting).
  */
 public class MainMenuPanel extends JPanel {
 
-    private static final String BACKGROUND_RESOURCE_PATH = "/assets/images/angger_assetes.jpeg";
+    private static final String BACKGROUND_RESOURCE_PATH = "/assets/images/main_menu.jpeg" +
+            "";
 
-    private static final Color TITLE_COLOR = new Color(245, 245, 245);
-    private static final Color TITLE_SHADOW_COLOR = new Color(0, 0, 0, 200);
-    private static final Color SUBTITLE_COLOR = new Color(215, 215, 215);
-    private static final Color FOOTER_COLOR = new Color(230, 230, 230);
+    private static final Color SUBTITLE_COLOR = new Color(200, 215, 235);
+    private static final Color FOOTER_COLOR = new Color(210, 220, 235);
 
-    private static final int HEADER_TOP_PADDING = 40;
-    private static final int HEADER_SIDE_PADDING = 10;
-    private static final int SUBTITLE_TOP_PADDING = 6;
-    private static final int FOOTER_BOTTOM_PADDING = 22;
-    private static final int BUTTON_SPACING = 14;
-    private static final int TITLE_FONT_SIZE = 64;
+    private static final int BUTTON_SPACING = 12;
 
     private BufferedImage backgroundImage;
 
     public MainMenuPanel(MainFrame parent) {
-        setLayout(new BorderLayout());
+        setLayout(new GridBagLayout());
         setOpaque(true);
 
         loadBackgroundImage();
-
-        add(buildHeaderPanel(), BorderLayout.NORTH);
-        add(buildCenterPanel(parent), BorderLayout.CENTER);
-        add(buildFooterPanel(), BorderLayout.SOUTH);
+        buildProportionalLayout(parent);
     }
 
     // =========================================================
@@ -81,6 +81,7 @@ public class MainMenuPanel extends JPanel {
         g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
 
         drawBackgroundCover(g2, getWidth(), getHeight());
+        paintCinematicOverlay(g2, getWidth(), getHeight());
 
         g2.dispose();
     }
@@ -88,7 +89,9 @@ public class MainMenuPanel extends JPanel {
     /**
      * Menggambar backgroundImage agar selalu memenuhi seluruh panel tanpa
      * distorsi (perilaku "cover" seperti CSS background-size: cover).
-     * Kelebihan area akan di-crop, bukan di-stretch.
+     * Kelebihan area akan di-crop dari sisi kiri/kanan secara simetris,
+     * sehingga elemen yang sudah center di gambar (judul, podium) akan
+     * tetap center di panel pada rasio layar berapa pun.
      */
     private void drawBackgroundCover(Graphics2D g2, int panelWidth, int panelHeight) {
         if (backgroundImage == null || panelWidth <= 0 || panelHeight <= 0) {
@@ -114,51 +117,92 @@ public class MainMenuPanel extends JPanel {
         g2.drawImage(backgroundImage, drawX, drawY, scaledWidth, scaledHeight, null);
     }
 
-    // =========================================================
-    //  HEADER: Judul Utama + Sub-teks
-    // =========================================================
-    private JPanel buildHeaderPanel() {
-        JPanel panel = new JPanel();
-        panel.setOpaque(false);
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createEmptyBorder(
-                HEADER_TOP_PADDING, HEADER_SIDE_PADDING, HEADER_SIDE_PADDING, HEADER_SIDE_PADDING));
+    /**
+     * Vignette sinematik: sedikit menggelapkan tepi atas/bawah (efek
+     * letterbox halus) dan memberi radial-darken lembut tepat di belakang
+     * zona menu (titik pertemuan gelombang) supaya tombol & teks tetap
+     * kontras tanpa menutupi keindahan artwork.
+     */
+    private void paintCinematicOverlay(Graphics2D g2, int w, int h) {
+        if (w <= 0 || h <= 0) return;
 
-        JLabel title = new ShadowedLabel("AAAAAAAAAAAA", TITLE_COLOR, TITLE_SHADOW_COLOR);
-        title.setAlignmentX(Component.CENTER_ALIGNMENT);
-        title.setFont(pickTitleFont(TITLE_FONT_SIZE));
+        g2.setPaint(new GradientPaint(0, 0, new Color(0, 0, 0, 110), 0, h * 0.16f, new Color(0, 0, 0, 0)));
+        g2.fillRect(0, 0, w, (int) (h * 0.16f));
 
-        JLabel subtitle = new JLabel("VOICE-POWERED  .  TERIAK SEKENCENG MUNGKIN");
-        subtitle.setAlignmentX(Component.CENTER_ALIGNMENT);
-        subtitle.setFont(new Font("Arial", Font.PLAIN, 15));
-        subtitle.setForeground(SUBTITLE_COLOR);
-        subtitle.setBorder(BorderFactory.createEmptyBorder(SUBTITLE_TOP_PADDING, 0, 0, 0));
+        g2.setPaint(new GradientPaint(0, h * 0.86f, new Color(0, 0, 0, 0), 0, h, new Color(0, 0, 0, 150)));
+        g2.fillRect(0, (int) (h * 0.86f), w, (int) (h * 0.14f) + 1);
 
-        panel.add(title);
-        panel.add(subtitle);
-        return panel;
-    }
-
-    private Font pickTitleFont(int size) {
-        String[] candidates = {"Impact", "Arial Black", "Haettenschweiler", "Arial"};
-        String[] available = GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames();
-        List<String> availableList = java.util.Arrays.asList(available);
-        for (String name : candidates) {
-            if (availableList.contains(name)) {
-                int style = name.equals("Arial") ? Font.BOLD : Font.PLAIN;
-                return new Font(name, style, size);
-            }
+        float cx = w / 2f;
+        float cy = h * 0.60f; // titik pertemuan gelombang pada artwork
+        float radius = Math.max(w, h) * 0.42f;
+        try {
+            RadialGradientPaint radial = new RadialGradientPaint(
+                    new Point2D.Float(cx, cy), radius,
+                    new float[]{0f, 1f},
+                    new Color[]{new Color(0, 0, 0, 95), new Color(0, 0, 0, 0)}
+            );
+            g2.setPaint(radial);
+            g2.fillRect(0, 0, w, h);
+        } catch (IllegalArgumentException ignored) {
+            // radius 0 pada kondisi ekstrem (panel belum berukuran) - abaikan frame ini
         }
-        return new Font("SansSerif", Font.BOLD, size);
     }
 
     // =========================================================
-    //  CENTER: Tombol-tombol Menu
+    //  LAYOUT PROPORSIONAL — mengikuti komposisi foto
+    //  (judul besar & subjudul dari foto -> tidak digambar lagi)
     // =========================================================
-    private JPanel buildCenterPanel(MainFrame parent) {
-        JPanel wrapper = new JPanel(new GridBagLayout());
-        wrapper.setOpaque(false);
+    private void buildProportionalLayout(MainFrame parent) {
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.fill = GridBagConstraints.BOTH;
+        int row = 0;
 
+        // Row A: ruang kosong -> menyisakan area judul besar pada foto
+        addSpacer(gbc, row++, 0.34f);
+
+        // Row B: subtitle kecil, jatuh tepat di bawah judul besar pada foto
+        gbc.gridy = row++;
+        gbc.weighty = 0f;
+        gbc.anchor = GridBagConstraints.NORTH;
+        // Row C: jarak turun mengikuti alur gelombang
+        addSpacer(gbc, row++, 0.10f);
+
+        // Row D: MENU — diposisikan tepat di titik pertemuan/fokus gelombang
+        gbc.gridy = row++;
+        gbc.weighty = 0.34f;
+        gbc.anchor = GridBagConstraints.CENTER;
+        add(buildMenuBox(parent), gbc);
+
+        // Row E: jarak sebelum area podium/console
+        addSpacer(gbc, row++, 0.10f);
+
+        // Row F: footer, menempel dekat podium/console di bawah
+        gbc.gridy = row++;
+        gbc.weighty = 0f;
+        gbc.anchor = GridBagConstraints.SOUTH;
+        JLabel footer = new JLabel("AKTIFKAN MIKROFON  .  TERIAK SEKENCANG MUNGKIN", SwingConstants.CENTER);
+        footer.setFont(new Font("Arial", Font.BOLD, 13));
+        footer.setForeground(FOOTER_COLOR);
+        add(footer, gbc);
+
+        // Row G: margin bawah, menyisakan platform lingkaran pada foto
+        addSpacer(gbc, row, 0.06f);
+    }
+
+    private void addSpacer(GridBagConstraints gbc, int row, float weight) {
+        gbc.gridy = row;
+        gbc.weighty = weight;
+        gbc.anchor = GridBagConstraints.CENTER;
+        JPanel spacer = new JPanel();
+        spacer.setOpaque(false);
+        add(spacer, gbc);
+    }
+
+    // =========================================================
+    //  KOTAK MENU (tombol-tombol)
+    // =========================================================
+    private JPanel buildMenuBox(MainFrame parent) {
         JPanel menuBox = new JPanel();
         menuBox.setOpaque(false);
         menuBox.setLayout(new BoxLayout(menuBox, BoxLayout.Y_AXIS));
@@ -186,7 +230,6 @@ public class MainMenuPanel extends JPanel {
         btnTurnamen.addActionListener(e -> parent.showView("INPUT_TOURNAMENT"));
         btnPeringkat.addActionListener(e -> parent.showView("LEADERBOARD_SCREEN"));
 
-        menuBox.add(Box.createVerticalGlue());
         for (MenuButton b : buttons) {
             menuBox.add(b);
             menuBox.add(Box.createRigidArea(new Dimension(0, BUTTON_SPACING)));
@@ -194,60 +237,9 @@ public class MainMenuPanel extends JPanel {
 
         MenuButton btnExit = new MenuButton("KELUAR", false);
         btnExit.addActionListener(e -> System.exit(0));
-
         menuBox.add(btnExit);
-        menuBox.add(Box.createVerticalGlue());
 
-        wrapper.add(menuBox);
-        return wrapper;
-    }
-
-    // =========================================================
-    //  FOOTER
-    // =========================================================
-    private JPanel buildFooterPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        panel.setOpaque(false);
-        panel.setBorder(BorderFactory.createEmptyBorder(0, 0, FOOTER_BOTTOM_PADDING, 0));
-
-        JLabel footer = new JLabel("AKTIFKAN MIKROFON  .  TERIAK SEKENCANG MUNGKIN");
-        footer.setFont(new Font("Arial", Font.BOLD, 13));
-        footer.setForeground(FOOTER_COLOR);
-
-        panel.add(footer);
-        return panel;
-    }
-
-    // =========================================================
-    //  LABEL DENGAN BAYANGAN (untuk keterbacaan di atas gambar)
-    // =========================================================
-    static class ShadowedLabel extends JLabel {
-        private final Color shadowColor;
-
-        ShadowedLabel(String text, Color textColor, Color shadowColor) {
-            super(text);
-            this.shadowColor = shadowColor;
-            setForeground(textColor);
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g2.setFont(getFont());
-
-            FontMetrics fm = g2.getFontMetrics();
-            int textX = (getWidth() - fm.stringWidth(getText())) / 2;
-            int textY = (getHeight() + fm.getAscent() - fm.getDescent()) / 2;
-
-            g2.setColor(shadowColor);
-            g2.drawString(getText(), textX + 2, textY + 2);
-
-            g2.setColor(getForeground());
-            g2.drawString(getText(), textX, textY);
-
-            g2.dispose();
-        }
+        return menuBox;
     }
 
     // =========================================================
@@ -255,18 +247,21 @@ public class MainMenuPanel extends JPanel {
     //  Blade-panel cinematic hover: energy wipe, layered shadow,
     //  breathing glow, one-shot light streak, ember particles,
     //  heat distortion dan tactile click compression.
+    //  Palet disetel ke nuansa icy blue-white agar senada dengan
+    //  pencahayaan dingin pada artwork latar.
     //  Semua diimplementasikan murni Java2D + Swing Timer.
     // =========================================================
     static class MenuButton extends JButton {
 
-        // ---- Palet warna (monokrom, sesuai identitas visual game) ----
-        private static final Color BG_NORMAL = new Color(20, 20, 20, 150);
-        private static final Color BG_ACTIVE = new Color(245, 245, 245, 235);
-        private static final Color TEXT_NORMAL = new Color(230, 230, 230);
-        private static final Color TEXT_ACTIVE = new Color(15, 15, 15);
-        private static final Color BORDER_SMOKE = new Color(140, 140, 145);
-        private static final Color BORDER_GLOW = new Color(230, 230, 235);
-        private static final Color SHADOW_CHARCOAL = new Color(8, 8, 8);
+        // ---- Palet warna (monokrom dingin, senada dengan artwork) ----
+        private static final Color BG_NORMAL = new Color(15, 17, 22, 150);
+        private static final Color BG_ACTIVE = new Color(238, 242, 248, 235);
+        private static final Color TEXT_NORMAL = new Color(222, 228, 238);
+        private static final Color TEXT_ACTIVE = new Color(12, 14, 18);
+        private static final Color BORDER_SMOKE = new Color(135, 145, 160);
+        private static final Color BORDER_GLOW = new Color(205, 225, 255);
+        private static final Color SHADOW_CHARCOAL = new Color(6, 7, 10);
+        private static final Color ENERGY_TINT = new Color(220, 235, 255);
 
         // ---- Durasi animasi ----
         private static final int HOVER_IN_MS = 200;
@@ -322,8 +317,8 @@ public class MainMenuPanel extends JPanel {
 
             setFont(new Font("Arial", Font.BOLD, 18));
             setAlignmentX(Component.CENTER_ALIGNMENT);
-            setMaximumSize(new Dimension(340, 52));
-            setPreferredSize(new Dimension(340, 52));
+            setMaximumSize(new Dimension(320, 50));
+            setPreferredSize(new Dimension(320, 50));
             setFocusPainted(false);
             setContentAreaFilled(false);
             setBorderPainted(false);
@@ -582,7 +577,7 @@ public class MainMenuPanel extends JPanel {
             g2.fill(shape);
         }
 
-        /** Gelombang energi putih yang menyapu dari kiri ke kanan saat kursor masuk. */
+        /** Gelombang energi putih-kebiruan yang menyapu dari kiri ke kanan saat kursor masuk. */
         private void paintEnergyWipe(Graphics2D g2, Shape shape, int w, int h) {
             if (hoverAnim <= 0f || hoverAnim >= 1f) {
                 return;
@@ -600,7 +595,7 @@ public class MainMenuPanel extends JPanel {
                 float f = i / (float) (steps - 1);
                 float x = frontX - bandWidth * f;
                 int alpha = clampByte((int) (150 * (1f - f)));
-                g2.setColor(new Color(255, 255, 255, alpha));
+                g2.setColor(new Color(ENERGY_TINT.getRed(), ENERGY_TINT.getGreen(), ENERGY_TINT.getBlue(), alpha));
                 g2.fill(new Rectangle2D.Float(x, 0, stepWidth, h));
             }
 
@@ -631,7 +626,7 @@ public class MainMenuPanel extends JPanel {
                     wave.lineTo(x, y);
                 }
                 int alpha = clampByte((int) (28 * (1f - Math.abs(hoverAnim - 0.5f) * 1.4f)));
-                g2.setColor(new Color(230, 230, 235, alpha));
+                g2.setColor(new Color(215, 230, 255, alpha));
                 g2.draw(wave);
             }
 
@@ -644,7 +639,7 @@ public class MainMenuPanel extends JPanel {
                 float ratio = p.lifeRatio();
                 int alpha = clampByte((int) (200 * ratio));
                 float s = p.size * ratio;
-                g2.setColor(new Color(255, 255, 255, alpha));
+                g2.setColor(new Color(230, 240, 255, alpha));
                 g2.fill(new Ellipse2D.Float(p.x - s / 2f, p.y - s / 2f, s, s));
             }
         }
@@ -670,7 +665,7 @@ public class MainMenuPanel extends JPanel {
             streak.addPoint((int) (streakX + h * 0.5f - h), h + 5);
             streak.addPoint((int) (streakX - h), h + 5);
 
-            g2.setColor(new Color(255, 255, 255, alpha));
+            g2.setColor(new Color(235, 244, 255, alpha));
             g2.fill(streak);
 
             g2.setClip(oldClip);
@@ -688,7 +683,7 @@ public class MainMenuPanel extends JPanel {
 
             g2.setStroke(new BasicStroke(3.5f));
             int alpha = clampByte((int) (120 * breathe));
-            g2.setColor(new Color(255, 255, 255, alpha));
+            g2.setColor(new Color(BORDER_GLOW.getRed(), BORDER_GLOW.getGreen(), BORDER_GLOW.getBlue(), alpha));
             g2.draw(shape);
         }
 

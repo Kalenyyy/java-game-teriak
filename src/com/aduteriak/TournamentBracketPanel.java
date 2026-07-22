@@ -5,302 +5,379 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.*;
-import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
 
-
+/**
+ * TournamentBracketPanel.java
+ *
+ * Direstyle agar satu bahasa visual dengan InputTournamentPanel: bagan
+ * hologram cyan di atas background prosedural (gradient + grid HUD, TANPA
+ * aset gambar), dengan bracket sudut viewfinder, breathing border, scanline
+ * yang menyapu, dan tombol bergaya glass cyan yang identik.
+ *
+ * Header & footer diberi jatah tinggi tetap; bagan turnamen dipusatkan HANYA
+ * pada area di antara keduanya (bukan seluruh tinggi panel), sehingga node
+ * bagan tidak pernah menabrak tombol atau judul. Ruang kosong di kiri/kanan
+ * bagan diisi panel info HUD ringkas (jumlah pemain, ronde, status) agar
+ * tetap fungsional, bukan sekadar dekorasi kosong.
+ *
+ * Logika inti (bagan, refresh, aksi tombol) TIDAK DIUBAH — murni perubahan
+ * tampilan. Efek sinematik lama (fog, debu, noise, siluet stickman) dan
+ * background gambar dibuang karena tidak lagi relevan/diminta.
+ */
 public class TournamentBracketPanel extends JPanel {
 
     // =========================================================
-    //  PALET WARNA (murni grayscale)
+    //  PALET WARNA — sama persis dengan InputTournamentPanel
     // =========================================================
-    private static final Color BG_TOP = new Color(20, 20, 20);
-    private static final Color BG_BOTTOM = new Color(4, 4, 4);
-    private static final Color TEXT_PRIMARY = new Color(245, 245, 245);
-    private static final Color TEXT_SECONDARY = new Color(165, 165, 165);
-    private static final Color TEXT_MUTED = new Color(105, 105, 105);
-    private static final Color COLOR_ELIMINATED = new Color(120, 120, 120);
-    private static final Color COLOR_PENDING = new Color(90, 90, 90);
-    private static final Color COLOR_ACTIVE = new Color(230, 230, 230);
-    private static final Color CARD_BG = new Color(255, 255, 255, 16);
-    private static final Color CARD_BORDER = new Color(255, 255, 255, 45);
-    private static final Color CARD_BORDER_WIN = new Color(255, 255, 255, 150);
+    private static final Color C_WHITE        = new Color(240, 248, 252);
+    private static final Color C_SOFT_BLUE    = new Color(176, 208, 226);
+    private static final Color C_MUTED_BLUE   = new Color(120, 148, 168);
+    private static final Color C_CYAN         = new Color(140, 226, 255);
+    private static final Color C_CYAN_BRIGHT  = new Color(200, 244, 255);
+    private static final Color C_CYAN_DIM     = new Color(90, 160, 190);
+
+    private static final Color GLASS_FILL_TOP    = new Color(10, 24, 34, 150);
+    private static final Color GLASS_FILL_BOTTOM = new Color(3, 9, 14, 205);
 
     private final MainFrame parent;
     private JButton btnPlayMatch;
     private JButton btnShuffle;
+    private JPanel headerPanel;
+    private JPanel footerPanel;
 
-    // ---- Animasi & efek sinematik ----
+    // ---- Animasi ----
     private Timer masterTimer;
-    private float entranceProgress = 0f;
+    private float entranceAlpha = 1f;
     private float titleBobPhase = 0f;
     private float glowBreathPhase = 0f;
-
-    private BufferedImage ambientLayer;
-    private BufferedImage noiseLayer;
-    private final Random rng = new Random();
-    private final List<float[]> dustParticles = new ArrayList<>();
-    private final List<float[]> fogBlobs = new ArrayList<>();
+    private float scanPhase = -0.2f;
 
     public TournamentBracketPanel(MainFrame parent) {
         this.parent = parent;
         setOpaque(true);
-        setBackground(BG_BOTTOM);
         setLayout(new BorderLayout());
 
-        initParticles();
-
-        add(buildHeaderPanel(), BorderLayout.NORTH);
-        add(buildFooterPanel(), BorderLayout.SOUTH);
-
-        addComponentListener(new ComponentAdapter() {
-            @Override
-            public void componentResized(ComponentEvent e) {
-                regenerateCachedLayers();
-            }
-        });
+        headerPanel = buildHeaderPanel();
+        footerPanel = buildFooterPanel();
+        add(headerPanel, BorderLayout.NORTH);
+        add(footerPanel, BorderLayout.SOUTH);
 
         masterTimer = new Timer(16, e -> tickAnimation());
         masterTimer.start();
     }
 
     // =========================================================
-    //  PARTIKEL & ANIMASI
+    //  LATAR BELAKANG — prosedural (gradient + grid HUD), TANPA aset gambar
     // =========================================================
-    private void initParticles() {
-        for (int i = 0; i < 30; i++) {
-            float x = rng.nextFloat();
-            float y = rng.nextFloat();
-            float vy = 0.00012f + rng.nextFloat() * 0.00025f;
-            float size = 1f + rng.nextFloat() * 2.2f;
-            float alphaBase = 0.07f + rng.nextFloat() * 0.15f;
-            float phase = rng.nextFloat() * 6.28f;
-            dustParticles.add(new float[]{x, y, vy, size, alphaBase, phase});
-        }
-        for (int i = 0; i < 3; i++) {
-            float x = rng.nextFloat();
-            float y = 0.5f + rng.nextFloat() * 0.4f;
-            float vx = (0.00006f + rng.nextFloat() * 0.00010f) * (rng.nextBoolean() ? 1 : -1);
-            float radius = 150f + rng.nextFloat() * 130f;
-            float alphaBase = 0.02f + rng.nextFloat() * 0.02f;
-            float phase = rng.nextFloat() * 6.28f;
-            fogBlobs.add(new float[]{x, y, vx, radius, alphaBase, phase});
-        }
-    }
+    private void drawProceduralBackground(Graphics2D g2, int w, int h) {
+        g2.setPaint(new GradientPaint(0, 0, new Color(14, 22, 30), 0, h, new Color(4, 7, 10)));
+        g2.fillRect(0, 0, w, h);
 
-    private void tickAnimation() {
-        if (entranceProgress < 1f) entranceProgress = Math.min(1f, entranceProgress + 0.035f);
-        titleBobPhase += 0.02f;
-        glowBreathPhase += 0.015f;
-
-        for (float[] p : dustParticles) {
-            p[1] -= p[2];
-            if (p[1] < -0.02f) p[1] = 1.02f;
-        }
-        for (float[] f : fogBlobs) {
-            f[0] += f[2];
-            if (f[0] < -0.3f) f[0] = 1.3f;
-            if (f[0] > 1.3f) f[0] = -0.3f;
-        }
-        repaint();
-    }
-
-    private void regenerateCachedLayers() {
-        int w = Math.max(getWidth(), 1);
-        int h = Math.max(getHeight(), 1);
-
-        ambientLayer = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D ga = ambientLayer.createGraphics();
-        ga.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-        RadialGradientPaint vignette = new RadialGradientPaint(
-                new Point2D.Float(w / 2f, h / 2f), Math.max(w, h) * 0.78f,
-                new float[]{0f, 0.6f, 1f},
-                new Color[]{new Color(0, 0, 0, 0), new Color(0, 0, 0, 55), new Color(0, 0, 0, 165)}
-        );
-        ga.setPaint(vignette);
-        ga.fillRect(0, 0, w, h);
-
+        // sorotan radial cyan sangat lembut di area atas-tengah, kesan sorotan panggung/HUD
         RadialGradientPaint spotlight = new RadialGradientPaint(
-                new Point2D.Float(w * 0.75f, h * 0.15f), w * 0.5f,
+                new Point2D.Float(w / 2f, h * 0.18f), w * 0.6f,
                 new float[]{0f, 1f},
-                new Color[]{new Color(255, 255, 255, 22), new Color(255, 255, 255, 0)}
+                new Color[]{new Color(140, 226, 255, 20), new Color(140, 226, 255, 0)}
         );
-        ga.setPaint(spotlight);
-        ga.fillRect(0, 0, w, h);
-        ga.dispose();
+        g2.setPaint(spotlight);
+        g2.fillRect(0, 0, w, h);
 
-        noiseLayer = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D gn = noiseLayer.createGraphics();
-        gn.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
-        for (int i = 0; i < (w * h) / 900; i++) {
-            int x = rng.nextInt(w);
-            int y = rng.nextInt(h);
-            int shade = rng.nextBoolean() ? 255 : 0;
-            int alpha = 6 + rng.nextInt(10);
-            gn.setColor(new Color(shade, shade, shade, alpha));
-            gn.fillRect(x, y, 1, 1);
+        paintHudDotGrid(g2, w, h);
+    }
+
+    /** Dot-grid HUD sangat samar agar latar tidak terasa polos/kosong tanpa jadi ramai. */
+    private void paintHudDotGrid(Graphics2D g2, int w, int h) {
+        g2.setColor(new Color(160, 230, 255, 10));
+        int step = 34;
+        for (int x = step; x < w; x += step) {
+            for (int y = step; y < h; y += step) {
+                g2.fillOval(x, y, 1, 1);
+            }
         }
-        gn.setColor(new Color(255, 255, 255, 5));
-        for (int y = 0; y < h; y += 3) gn.drawLine(0, y, w, y);
-        gn.dispose();
+    }
 
+    // =========================================================
+    //  ANIMASI
+    // =========================================================
+    private void tickAnimation() {
+        if (entranceAlpha > 0f) {
+            entranceAlpha = Math.max(0f, entranceAlpha - 0.045f);
+        }
+        titleBobPhase += 0.02f;
+        glowBreathPhase += 0.02f;
+        scanPhase += 0.0035f;
+        if (scanPhase > 1.2f) scanPhase = -0.2f;
         repaint();
     }
 
     // =========================================================
-    //  PAINT: latar sinematik + bagan turnamen
+    //  PAINT: latar + scanline HUD + bagan turnamen
     // =========================================================
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
         Graphics2D g2 = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
 
         int w = getWidth();
         int h = getHeight();
 
-        if (ambientLayer == null || ambientLayer.getWidth() != w || ambientLayer.getHeight() != h) {
-            regenerateCachedLayers();
-        }
+        drawProceduralBackground(g2, w, h);
+        paintHudScanline(g2, w, h);
+        paintCornerBrackets(g2, w, h);
 
-        GradientPaint base = new GradientPaint(0, 0, BG_TOP, 0, h, BG_BOTTOM);
-        g2.setPaint(base);
-        g2.fillRect(0, 0, w, h);
+        // ---- Area aman bagan: hanya di antara header & footer, TIDAK PERNAH
+        //      menabrak tombol/judul, berapa pun dalam pohon turnamennya. ----
+        int topSafe = headerPanel.getHeight();
+        int bottomSafe = footerPanel.getHeight();
+        int safeCenterY = topSafe + Math.max(0, (h - topSafe - bottomSafe) / 2);
 
-        drawFog(g2, w, h);
-        drawStickman(g2, w * 0.10f, h * 0.85f, Math.min(w, h) * 0.20f, 0.045f);
-        drawStickman(g2, w * 0.90f, h * 0.14f, Math.min(w, h) * 0.18f, 0.04f);
-        drawDust(g2, w, h);
-
-        if (ambientLayer != null) g2.drawImage(ambientLayer, 0, 0, null);
-        if (noiseLayer != null) g2.drawImage(noiseLayer, 0, 0, null);
-
-        // Bagan turnamen digambar di atas latar, di bawah komponen UI (header/footer)
         if (GameState.tournamentRoot != null) {
             int depth = computeTreeDepth(GameState.tournamentRoot);
-            int rootX = (w / 2) + (125 * depth); // supaya seluruh bagan (bukan cuma root) simetris di tengah
-            drawNode(g2, GameState.tournamentRoot, rootX, h / 2, 200);
+            int rootX = (w / 2) + (125 * depth); // supaya seluruh bagan simetris di tengah
+            drawNode(g2, GameState.tournamentRoot, rootX, safeCenterY, 200);
+            paintSideInfoPanels(g2, w, h, topSafe, bottomSafe, depth);
         }
 
         g2.dispose();
-    }
 
-    @Override
-    public void paint(Graphics g) {
-        super.paint(g);
-        if (entranceProgress < 1f) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            int h = getHeight();
-            int curtainH = (int) (h * (1f - smoothStep(entranceProgress)));
-            g2.setColor(new Color(2, 2, 2, (int) (255 * (1f - entranceProgress) * 0.9f + 20)));
-            g2.fillRect(0, 0, getWidth(), curtainH);
-            g2.dispose();
+        if (entranceAlpha > 0f) {
+            Graphics2D gf = (Graphics2D) g.create();
+            gf.setColor(new Color(0, 0, 0, (int) (entranceAlpha * 255)));
+            gf.fillRect(0, 0, w, h);
+            gf.dispose();
         }
     }
 
-    private float smoothStep(float t) {
-        return t * t * (3f - 2f * t);
+    /**
+     * Panel info HUD ringkas di ruang kosong kiri & kanan bagan (jumlah
+     * peserta, jumlah ronde, status turnamen). Hanya tampil kalau lebar
+     * layar cukup lega, supaya TIDAK PERNAH menabrak node bagan di tengah.
+     */
+    private void paintSideInfoPanels(Graphics2D g2, int w, int h, int topSafe, int bottomSafe, int depth) {
+        int boxW = 168, boxH = 92;
+        int estimatedBracketHalfWidth = 95 + 250 * depth; // perkiraan lebar bagan dari tengah
+        int marginNeeded = w / 2 - estimatedBracketHalfWidth;
+        if (marginNeeded < boxW + 60) return; // ruang tidak cukup, jangan dipaksakan
+
+        int centerY = topSafe + (h - topSafe - bottomSafe) / 2;
+        int boxY = centerY - boxH / 2;
+
+        int rounds = depth + 1;
+        int totalPlayers = GameState.allPlayers != null ? GameState.allPlayers.size() : 0;
+        boolean over = TournamentManager.isTournamentOver();
+
+        drawHudInfoBox(g2, 34, boxY, boxW, boxH, "TOURNAMENT INFO",
+                new String[]{"PESERTA", "RONDE"}, new String[]{String.valueOf(totalPlayers), String.valueOf(rounds)});
+
+        drawHudInfoBox(g2, w - 34 - boxW, boxY, boxW, boxH, "STATUS",
+                new String[]{"KEADAAN", "FORMAT"}, new String[]{over ? "SELESAI" : "BERLANGSUNG", "GUGUR TUNGGAL"});
     }
 
-    private void drawFog(Graphics2D g2, int w, int h) {
-        for (float[] f : fogBlobs) {
-            float cx = f[0] * w;
-            float cy = f[1] * h + (float) Math.sin(glowBreathPhase + f[5]) * 8f;
-            float radius = f[3];
-            float alpha = f[4] * (0.7f + 0.3f * (float) Math.sin(glowBreathPhase * 0.6f + f[5]));
-            RadialGradientPaint fogPaint = new RadialGradientPaint(
-                    new Point2D.Float(cx, cy), radius, new float[]{0f, 1f},
-                    new Color[]{new Color(255, 255, 255, clampAlpha(alpha)), new Color(255, 255, 255, 0)}
-            );
-            g2.setPaint(fogPaint);
-            g2.fillOval((int) (cx - radius), (int) (cy - radius), (int) (radius * 2), (int) (radius * 2));
+    private void drawHudInfoBox(Graphics2D g2, int x, int y, int w, int h, String title, String[] labels, String[] values) {
+        RoundRectangle2D shape = new RoundRectangle2D.Float(x, y, w, h, 12, 12);
+        g2.setPaint(new GradientPaint(x, y, GLASS_FILL_TOP, x, y + h, GLASS_FILL_BOTTOM));
+        g2.fill(shape);
+        g2.setColor(new Color(160, 230, 255, 70));
+        g2.setStroke(new BasicStroke(1f));
+        g2.draw(shape);
+
+        g2.setColor(C_CYAN);
+        g2.fillRect(x + 12, y + 12, 3, 12);
+        g2.setFont(pickTechFont(11, Font.BOLD));
+        g2.setColor(C_WHITE);
+        g2.drawString(title, x + 22, y + 22);
+
+        g2.setColor(new Color(160, 230, 255, 45));
+        g2.drawLine(x + 12, y + 30, x + w - 12, y + 30);
+
+        int rowY = y + 50;
+        g2.setFont(pickTechFont(10, Font.BOLD));
+        for (int i = 0; i < labels.length; i++) {
+            g2.setColor(C_MUTED_BLUE);
+            g2.drawString(labels[i], x + 12, rowY);
+            g2.setColor(C_CYAN_BRIGHT);
+            FontMetrics fm = g2.getFontMetrics();
+            g2.drawString(values[i], x + w - 12 - fm.stringWidth(values[i]), rowY);
+            rowY += 22;
         }
     }
 
-    private void drawDust(Graphics2D g2, int w, int h) {
-        for (float[] p : dustParticles) {
-            float x = p[0] * w;
-            float y = p[1] * h;
-            float size = p[3];
-            float flicker = 0.6f + 0.4f * (float) Math.sin(glowBreathPhase * 2f + p[5]);
-            int alpha = clampAlpha(p[4] * flicker);
-            g2.setColor(new Color(255, 255, 255, alpha));
-            g2.fillOval((int) x, (int) y, (int) size, (int) size);
-        }
+    /** Scanline HUD tipis yang menyapu turun terus-menerus, senada kartu hologram lain. */
+    private void paintHudScanline(Graphics2D g2, int w, int h) {
+        float y = h * scanPhase;
+        float bandH = Math.max(14f, h * 0.05f);
+        g2.setPaint(new GradientPaint(0, y - bandH / 2f, new Color(160, 230, 255, 0), 0, y, new Color(160, 230, 255, 22)));
+        g2.fillRect(0, (int) (y - bandH / 2f), w, (int) (bandH / 2f));
+        g2.setPaint(new GradientPaint(0, y, new Color(160, 230, 255, 22), 0, y + bandH / 2f, new Color(160, 230, 255, 0)));
+        g2.fillRect(0, (int) y, w, (int) (bandH / 2f));
     }
 
-    private int clampAlpha(float a) {
+    /** Bracket sudut viewfinder di keempat pojok layar, kesan terminal HUD. */
+    private void paintCornerBrackets(Graphics2D g2, int w, int h) {
+        float breathe = 0.6f + 0.4f * (float) (0.5 + 0.5 * Math.sin(glowBreathPhase));
+        int len = 22, pad = 16;
+        g2.setStroke(new BasicStroke(2f));
+        g2.setColor(new Color(160, 230, 255, (int) (110 + 80 * breathe)));
+
+        g2.drawLine(pad, pad, pad + len, pad);
+        g2.drawLine(pad, pad, pad, pad + len);
+        g2.drawLine(w - pad, pad, w - pad - len, pad);
+        g2.drawLine(w - pad, pad, w - pad, pad + len);
+        g2.drawLine(pad, h - pad, pad + len, h - pad);
+        g2.drawLine(pad, h - pad, pad, h - pad - len);
+        g2.drawLine(w - pad, h - pad, w - pad - len, h - pad);
+        g2.drawLine(w - pad, h - pad, w - pad, h - pad - len);
+    }
+
+    private static int clampAlpha(float a) {
         return Math.max(0, Math.min(255, (int) (a * 255)));
     }
 
-    // =========================================================
-    //  STICKMAN REDESIGN (senada InputTournamentPanel)
-    // =========================================================
-    private void drawStickman(Graphics2D g2, float cx, float cy, float scale, float baseAlpha) {
-        GeneralPath body = new GeneralPath();
-        float headR = scale * 0.12f;
-        float neckY = cy - scale * 0.34f;
-        float hipY = cy + scale * 0.10f;
+    private static Font pickTitleFont(int size) {
+        String[] candidates = {"Impact", "Arial Black", "Haettenschweiler", "Arial"};
+        String[] available = GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames();
+        List<String> availableList = Arrays.asList(available);
+        for (String name : candidates) {
+            if (availableList.contains(name)) {
+                return new Font(name, name.equals("Arial") ? Font.BOLD : Font.PLAIN, size);
+            }
+        }
+        return new Font("SansSerif", Font.BOLD, size);
+    }
 
-        body.append(new Ellipse2D.Float(cx - headR, neckY - headR * 2.1f, headR * 2, headR * 2), false);
-        body.moveTo(cx, neckY);
-        body.curveTo(cx - scale * 0.01f, neckY + scale * 0.15f, cx + scale * 0.01f, hipY - scale * 0.1f, cx, hipY);
-
-        body.moveTo(cx, neckY + scale * 0.06f);
-        body.curveTo(cx - scale * 0.06f, neckY + scale * 0.14f, cx - scale * 0.14f, neckY + scale * 0.20f, cx - scale * 0.18f, neckY + scale * 0.30f);
-        body.moveTo(cx, neckY + scale * 0.06f);
-        body.curveTo(cx + scale * 0.06f, neckY + scale * 0.14f, cx + scale * 0.14f, neckY + scale * 0.20f, cx + scale * 0.18f, neckY + scale * 0.30f);
-
-        body.moveTo(cx, hipY);
-        body.curveTo(cx - scale * 0.05f, hipY + scale * 0.20f, cx - scale * 0.14f, hipY + scale * 0.32f, cx - scale * 0.20f, hipY + scale * 0.46f);
-        body.moveTo(cx, hipY);
-        body.curveTo(cx + scale * 0.05f, hipY + scale * 0.20f, cx + scale * 0.14f, hipY + scale * 0.32f, cx + scale * 0.20f, hipY + scale * 0.46f);
-
-        AffineTransform shadowTx = AffineTransform.getTranslateInstance(scale * 0.03f, scale * 0.05f);
-        Shape shadowShape = shadowTx.createTransformedShape(body);
-        g2.setColor(new Color(0, 0, 0, clampAlpha(baseAlpha * 1.4f)));
-        g2.setStroke(new BasicStroke(scale * 0.045f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        g2.draw(shadowShape);
-
-        g2.setColor(new Color(255, 255, 255, clampAlpha(baseAlpha * 0.5f)));
-        g2.setStroke(new BasicStroke(scale * 0.09f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        g2.draw(body);
-        g2.setColor(new Color(255, 255, 255, clampAlpha(baseAlpha * 0.8f)));
-        g2.setStroke(new BasicStroke(scale * 0.06f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        g2.draw(body);
-
-        g2.setColor(new Color(255, 255, 255, clampAlpha(baseAlpha * 1.6f)));
-        g2.setStroke(new BasicStroke(scale * 0.03f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        g2.draw(body);
+    private static Font pickTechFont(int size, int style) {
+        String[] candidates = {"Orbitron", "Rajdhani", "Exo 2", "Eurostile", "Consolas", "Segoe UI Semibold", "Arial"};
+        String[] available = GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames();
+        List<String> availableList = Arrays.asList(available);
+        for (String name : candidates) {
+            if (availableList.contains(name)) return new Font(name, style, size);
+        }
+        return new Font(Font.MONOSPACED, style, size);
     }
 
     // =========================================================
-    //  HEADER
+    //  HEADER: back button cyan + judul + subjudul + pill "LIVE" + divider HUD
     // =========================================================
     private JPanel buildHeaderPanel() {
         JPanel wrapper = new JPanel();
         wrapper.setOpaque(false);
         wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
+        wrapper.setBorder(new EmptyBorder(26, 34, 6, 34));
 
         JPanel topRow = new JPanel(new BorderLayout());
         topRow.setOpaque(false);
-        topRow.add(new MinimalBackButton("\u2190 KEMBALI", () -> parent.showView("MENU_UTAMA")), BorderLayout.WEST);
+        topRow.add(new MinimalBackButton("KEMBALI", () -> parent.showView("MENU_UTAMA")), BorderLayout.WEST);
+        topRow.add(new LivePill(), BorderLayout.EAST);
         wrapper.add(topRow);
+        wrapper.add(Box.createRigidArea(new Dimension(0, 4)));
 
-        TitleHeader titleHeader = new TitleHeader();
-        titleHeader.setPreferredSize(new Dimension(10, 100));
-        wrapper.add(titleHeader);
-        wrapper.add(Box.createRigidArea(new Dimension(0, 6)));
+        MonoLabel title = new MonoLabel("TOURNAMENT BRACKET", C_WHITE, C_CYAN, true, 3f);
+        title.setFont(pickTitleFont(30));
+        title.setAlignmentX(Component.CENTER_ALIGNMENT);
+        title.setPreferredSize(new Dimension(10, 40));
+        wrapper.add(title);
+
+        MonoLabel sub = new MonoLabel("LIVE MATCH PROGRESSION", C_CYAN_DIM, C_CYAN_DIM, false, 2.4f);
+        sub.setFont(pickTechFont(11, Font.PLAIN));
+        sub.setAlignmentX(Component.CENTER_ALIGNMENT);
+        wrapper.add(Box.createRigidArea(new Dimension(0, 4)));
+        wrapper.add(sub);
+
+        wrapper.add(Box.createRigidArea(new Dimension(0, 10)));
+        HudDivider divider = new HudDivider();
+        divider.setAlignmentX(Component.CENTER_ALIGNMENT);
+        divider.setMaximumSize(new Dimension(4000, 18));
+        wrapper.add(divider);
 
         return wrapper;
     }
 
-    private class TitleHeader extends JComponent {
-        TitleHeader() {
+    /** Pil kecil "LIVE" berkedip cyan, pengganti status ONLINE pada panel input. */
+    private static class LivePill extends JComponent {
+        private float blinkPhase = 0f;
+        private final Timer timer;
+
+        LivePill() {
             setOpaque(false);
+            setPreferredSize(new Dimension(66, 22));
+            timer = new Timer(30, e -> {
+                blinkPhase += 0.05f;
+                repaint();
+            });
+            timer.start();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            float pulse = 0.55f + 0.45f * (float) (0.5 + 0.5 * Math.sin(blinkPhase));
+
+            int h = getHeight();
+            g2.setColor(new Color(140, 226, 255, (int) (30 * pulse)));
+            g2.fillRoundRect(0, h / 2 - 11, getWidth(), 22, 9, 9);
+            g2.setColor(new Color(160, 230, 255, 70));
+            g2.drawRoundRect(0, h / 2 - 11, getWidth() - 1, 21, 9, 9);
+
+            g2.setColor(new Color(140, 226, 255, (int) (130 * pulse)));
+            g2.fillOval(8, h / 2 - 5, 12, 12);
+            g2.setColor(C_CYAN_BRIGHT);
+            g2.fillOval(10, h / 2 - 3, 8, 8);
+
+            g2.setFont(pickTechFont(10, Font.BOLD));
+            g2.setColor(C_SOFT_BLUE);
+            g2.drawString("LIVE", 24, h / 2 + 4);
+            g2.dispose();
+        }
+    }
+
+    /** Garis dekorasi HUD tipis dengan node kecil di tengah, aksen cyan (identik InputTournamentPanel). */
+    private static class HudDivider extends JComponent {
+        HudDivider() {
+            setOpaque(false);
+            setPreferredSize(new Dimension(10, 14));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int w = getWidth();
+            int cy = getHeight() / 2;
+
+            g2.setPaint(new GradientPaint(0, 0, new Color(140, 226, 255, 0), w / 2f, 0, new Color(140, 226, 255, 130)));
+            g2.drawLine(0, cy, w / 2 - 8, cy);
+            g2.setPaint(new GradientPaint(w / 2f, 0, new Color(140, 226, 255, 130), w, 0, new Color(140, 226, 255, 0)));
+            g2.drawLine(w / 2 + 8, cy, w, cy);
+
+            g2.setColor(C_CYAN);
+            g2.fillOval(w / 2 - 3, cy - 3, 6, 6);
+            g2.setColor(new Color(140, 226, 255, 70));
+            g2.fillOval(w / 2 - 6, cy - 6, 12, 12);
+            g2.dispose();
+        }
+    }
+
+    /** Label dengan letter-spacing manual + auto-fit ukuran font agar teks tak pernah terpotong. */
+    private static class MonoLabel extends JLabel {
+        private final Color glowColor;
+        private final boolean brackets;
+        private final float letterSpacing;
+
+        MonoLabel(String text, Color fg, Color glowColor, boolean brackets, float letterSpacing) {
+            super(text);
+            this.glowColor = glowColor;
+            this.brackets = brackets;
+            this.letterSpacing = letterSpacing;
+            setForeground(fg);
+            setOpaque(false);
+            setHorizontalAlignment(SwingConstants.CENTER);
+            setPreferredSize(new Dimension(10, 22));
         }
 
         @Override
@@ -309,90 +386,72 @@ public class TournamentBracketPanel extends JPanel {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-            int w = getWidth();
-            float bob = (float) Math.sin(titleBobPhase) * 2f;
+            String text = getText();
+            String left = brackets ? "[  " : "";
+            String right = brackets ? "  ]" : "";
 
-            Font smallFont = new Font("Arial", Font.BOLD, 13);
-            g2.setFont(smallFont);
-            g2.setColor(TEXT_MUTED);
-            drawTracked(g2, "BAGAN PERTANDINGAN", w / 2f, 20, 4f);
+            Font fitFont = getFont();
+            FontMetrics fm = g2.getFontMetrics(fitFont);
+            float spacing = letterSpacing;
+            float availableW = getWidth() - 6f;
+            float bracketW = brackets ? fm.stringWidth(left) + fm.stringWidth(right) : 0f;
+            float totalW = trackedWidth(fm, text, spacing) + bracketW;
 
-            Font titleFont = pickTitleFont(34);
-            g2.setFont(titleFont);
-            float titleY = 60 + bob;
-            float glowAlpha = 0.5f + 0.5f * (float) Math.sin(glowBreathPhase);
-            drawBloomText(g2, "TOURNAMENT BRACKET", w / 2f, titleY, titleFont, glowAlpha);
+            int minSize = 8;
+            while (totalW > availableW && fitFont.getSize() > minSize) {
+                fitFont = fitFont.deriveFont((float) (fitFont.getSize() - 1));
+                fm = g2.getFontMetrics(fitFont);
+                spacing = letterSpacing * (fitFont.getSize() / (float) getFont().getSize());
+                bracketW = brackets ? fm.stringWidth(left) + fm.stringWidth(right) : 0f;
+                totalW = trackedWidth(fm, text, spacing) + bracketW;
+            }
+            g2.setFont(fitFont);
 
-            g2.setColor(new Color(255, 255, 255, 55));
-            g2.setStroke(new BasicStroke(1f));
-            int lineW = (int) (w * 0.20f);
-            g2.drawLine(w / 2 - lineW / 2, (int) titleY + 14, w / 2 + lineW / 2, (int) titleY + 14);
+            boolean centered = getHorizontalAlignment() == SwingConstants.CENTER;
+            float x = centered ? Math.max(2f, (getWidth() - totalW) / 2f) : 0f;
+            int y = (getHeight() + fm.getAscent() - fm.getDescent()) / 2;
 
+            if (brackets) {
+                g2.setColor(glowColor);
+                g2.drawString(left, x, y);
+                x += fm.stringWidth(left);
+            }
+            g2.setColor(getForeground());
+            for (int i = 0; i < text.length(); i++) {
+                String ch = String.valueOf(text.charAt(i));
+                g2.drawString(ch, x, y);
+                x += fm.stringWidth(ch) + spacing;
+            }
+            if (brackets) {
+                g2.setColor(glowColor);
+                g2.drawString(right, x - spacing, y);
+            }
             g2.dispose();
         }
-    }
 
-    private void drawTracked(Graphics2D g2, String text, float centerX, float y, float extraSpacing) {
-        FontMetrics fm = g2.getFontMetrics();
-        float totalWidth = 0;
-        for (char c : text.toCharArray()) totalWidth += fm.charWidth(c) + extraSpacing;
-        totalWidth -= extraSpacing;
-        float x = centerX - totalWidth / 2f;
-        for (char c : text.toCharArray()) {
-            g2.drawString(String.valueOf(c), x, y);
-            x += fm.charWidth(c) + extraSpacing;
+        private static float trackedWidth(FontMetrics fm, String text, float spacing) {
+            float w = 0f;
+            for (int i = 0; i < text.length(); i++) w += fm.stringWidth(String.valueOf(text.charAt(i))) + spacing;
+            return Math.max(0f, w - spacing);
         }
-    }
-
-    private void drawBloomText(Graphics2D g2, String text, float centerX, float y, Font font, float glowAlpha) {
-        FontMetrics fm = g2.getFontMetrics(font);
-        int textWidth = fm.stringWidth(text);
-        float x = centerX - textWidth / 2f;
-
-        int[] offsets = {5, 3, 2};
-        for (int r : offsets) {
-            float a = glowAlpha * (0.10f - r * 0.02f);
-            g2.setColor(new Color(255, 255, 255, clampAlpha(Math.max(0, a))));
-            for (int dx = -r; dx <= r; dx += r) {
-                for (int dy = -r; dy <= r; dy += r) {
-                    if (dx == 0 && dy == 0) continue;
-                    g2.drawString(text, x + dx, y + dy);
-                }
-            }
-        }
-        g2.setColor(TEXT_PRIMARY);
-        g2.drawString(text, x, y);
-    }
-
-    private Font pickTitleFont(int size) {
-        String[] candidates = {"Impact", "Arial Black", "Haettenschweiler", "Arial"};
-        String[] available = GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames();
-        List<String> availableList = java.util.Arrays.asList(available);
-        for (String name : candidates) {
-            if (availableList.contains(name)) {
-                int style = name.equals("Arial") ? Font.BOLD : Font.PLAIN;
-                return new Font(name, style, size);
-            }
-        }
-        return new Font("SansSerif", Font.BOLD, size);
     }
 
     // =========================================================
-    //  FOOTER: Tombol Shuffle (outline) & Mulai Pertandingan (solid)
+    //  FOOTER: Tombol Shuffle (outline cyan) & Mulai Pertandingan (CTA cyan)
     // =========================================================
     private JPanel buildFooterPanel() {
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.CENTER, 22, 10));
         footer.setOpaque(false);
         footer.setBorder(new EmptyBorder(6, 0, 28, 0));
 
-        btnShuffle = new OutlineButton("ACAK POSISI (SHUFFLE)");
+        btnShuffle = new OutlineButton("\u21BB  ACAK POSISI (SHUFFLE)");
         btnShuffle.setPreferredSize(new Dimension(280, 54));
         btnShuffle.addActionListener(e -> {
             TournamentManager.shuffleAndRebuild(); // logika sama seperti versi asli
             repaint();
         });
 
-        btnPlayMatch = new PrimaryButton("MULAI PERTANDINGAN BERIKUTNYA");
+        btnPlayMatch = new PrimaryButton("\u25B8  MULAI PERTANDINGAN BERIKUTNYA");
         btnPlayMatch.setPreferredSize(new Dimension(400, 54));
         btnPlayMatch.addActionListener(e -> {
             // logika sama seperti versi asli
@@ -421,16 +480,12 @@ public class TournamentBracketPanel extends JPanel {
             }
         }
 
-        if (hasStarted) {
-            btnShuffle.setVisible(false);
-        } else {
-            btnShuffle.setVisible(true);
-        }
+        btnShuffle.setVisible(!hasStarted);
 
         if (TournamentManager.isTournamentOver()) {
-            btnPlayMatch.setText("LIHAT JUARA AKHIR");
+            btnPlayMatch.setText("\u25B8  LIHAT JUARA AKHIR");
         } else {
-            btnPlayMatch.setText("MULAI PERTANDINGAN BERIKUTNYA");
+            btnPlayMatch.setText("\u25B8  MULAI PERTANDINGAN BERIKUTNYA");
         }
 
         revalidate();
@@ -438,7 +493,7 @@ public class TournamentBracketPanel extends JPanel {
     }
 
     // =========================================================
-    //  GAMBAR BAGAN (logika rekursi sama persis, tampilan direstyle)
+    //  GAMBAR BAGAN (logika rekursi sama persis, tampilan direstyle cyan)
     // =========================================================
     private int computeTreeDepth(MatchNode node) {
         if (node == null || node.left == null) return 0;
@@ -450,34 +505,42 @@ public class TournamentBracketPanel extends JPanel {
 
         int w = 190, h = 82;
         boolean decided = node.winner != null;
+        RoundRectangle2D shape = new RoundRectangle2D.Float(x - w / 2f, y - h / 2f, w, h, 14, 14);
 
-        // Kartu match: kaca semi-transparan, border lebih terang kalau sudah ada pemenang
-        g.setColor(CARD_BG);
-        g.fillRoundRect(x - w / 2, y - h / 2, w, h, 14, 14);
+        // Kartu match: glass gradien gelap, border cyan (lebih terang & berdenyut kalau sudah ada pemenang)
+        g.setColor(new Color(0, 0, 0, 90));
+        g.fill(new RoundRectangle2D.Float(x - w / 2f + 2, y - h / 2f + 4, w, h, 14, 14));
 
+        g.setPaint(new GradientPaint(x, y - h / 2f, GLASS_FILL_TOP, x, y + h / 2f, GLASS_FILL_BOTTOM));
+        g.fill(shape);
+
+        float breathe = 0.6f + 0.4f * (float) (0.5 + 0.5 * Math.sin(glowBreathPhase * 1.4f));
         if (decided) {
-            float pulse = 0.7f + 0.3f * (float) Math.sin(glowBreathPhase * 1.4f);
-            g.setColor(new Color(255, 255, 255, clampAlpha((CARD_BORDER_WIN.getAlpha() / 255f) * pulse)));
+            g.setColor(new Color(140, 226, 255, (int) (60 * breathe)));
+            g.setStroke(new BasicStroke(3f));
+            g.draw(new RoundRectangle2D.Float(x - w / 2f - 2, y - h / 2f - 2, w + 4, h + 4, 16, 16));
+            g.setColor(new Color(200, 244, 255, clampAlpha(0.75f * breathe + 0.25f)));
+            g.setStroke(new BasicStroke(1.6f));
         } else {
-            g.setColor(CARD_BORDER);
+            g.setColor(new Color(160, 230, 255, 90));
+            g.setStroke(new BasicStroke(1.1f));
         }
-        g.setStroke(new BasicStroke(decided ? 1.6f : 1.2f));
-        g.drawRoundRect(x - w / 2, y - h / 2, w, h, 14, 14);
+        g.draw(shape);
 
-        g.setFont(new Font("Arial", Font.BOLD, 12));
-
-        drawPlayerInfo(g, node.p1, node.winner, x - w / 2 + 12, y - 14);
-        drawPlayerInfo(g, node.p2, node.winner, x - w / 2 + 12, y + 26);
+        g.setFont(pickTechFont(12, Font.BOLD));
+        drawPlayerInfo(g, node.p1, node.winner, x - w / 2 + 14, y - 14);
+        drawPlayerInfo(g, node.p2, node.winner, x - w / 2 + 14, y + 26);
 
         if (node.left != null) {
             int childX = x - 250;
             int childYLeft = y - yOffset;
             int childYRight = y + yOffset;
 
-            g.setColor(new Color(255, 255, 255, 40));
-            g.setStroke(new BasicStroke(1.3f));
-            g.drawLine(x - w / 2, y, childX + w / 2, childYLeft);
-            g.drawLine(x - w / 2, y, childX + w / 2, childYRight);
+            GradientPaint linePaint = new GradientPaint(childX, y, new Color(140, 226, 255, 90), x, y, new Color(140, 226, 255, 20));
+            g.setPaint(linePaint);
+            g.setStroke(new BasicStroke(1.4f));
+            g.draw(new Line2D.Float(x - w / 2f, y, childX + w / 2f, childYLeft));
+            g.draw(new Line2D.Float(x - w / 2f, y, childX + w / 2f, childYRight));
 
             drawNode(g, node.left, childX, childYLeft, yOffset / 2);
             drawNode(g, node.right, childX, childYRight, yOffset / 2);
@@ -486,154 +549,191 @@ public class TournamentBracketPanel extends JPanel {
 
     private void drawPlayerInfo(Graphics2D g, Player p, Player winner, int x, int y) {
         if (p == null) {
-            g.setColor(COLOR_PENDING);
+            g.setColor(C_MUTED_BLUE);
             g.drawString("MENUNGGU...", x, y);
             return;
         }
 
         if (winner != null && winner != p) {
-            // Kalah: abu-abu redup + coret (monochrome, bukan merah)
-            g.setColor(COLOR_ELIMINATED);
+            // Kalah: biru redup + coret
+            g.setColor(C_MUTED_BLUE);
             String name = p.getName().toUpperCase();
             g.drawString(name, x, y);
-            int stringWidth = g.getFontMetrics().stringWidth(name);
-            g.drawLine(x, y - 4, x + stringWidth, y - 4);
+            int strW = g.getFontMetrics().stringWidth(name);
+            g.drawLine(x, y - 4, x + strW, y - 4);
         } else if (winner == p) {
-            // Menang: putih terang + bold + glow tipis (monochrome, bukan emas)
+            // Menang: cyan terang + bold + glow tipis + bintang
             String name = p.getName().toUpperCase() + " \u2605";
-            g.setFont(g.getFont().deriveFont(Font.BOLD));
-            g.setColor(new Color(255, 255, 255, 40));
+            Font bold = g.getFont().deriveFont(Font.BOLD);
+            g.setFont(bold);
+            g.setColor(new Color(140, 226, 255, 90));
             g.drawString(name, x + 1, y + 1);
-            g.setColor(TEXT_PRIMARY);
+            g.setColor(C_CYAN_BRIGHT);
             g.drawString(name, x, y);
         } else {
-            g.setColor(COLOR_ACTIVE);
+            g.setColor(C_WHITE);
             g.drawString(p.getName().toUpperCase(), x, y);
         }
     }
 
     // =========================================================
-    //  KOMPONEN KUSTOM: Tombol kembali minimalis
+    //  TOMBOL KEMBALI — glass cyan, glow bernafas, light sweep saat hover
+    //  (identik strukturnya dengan InputTournamentPanel).
     // =========================================================
     private static class MinimalBackButton extends JComponent {
-        private final String text;
+        private static final String ARROW = "\u2190";
+        private final String label;
         private final Runnable action;
-        private boolean hover = false;
-        private float pressScale = 1f;
-        private Timer pressTimer;
+        private float hoverT = 0f;
+        private float pressT = 0f;
+        private float breathePhase = 0f;
+        private boolean hovering = false;
+        private boolean pressed = false;
+        private long streakStart = -1L;
+        private final Timer animTimer;
 
-        MinimalBackButton(String text, Runnable action) {
-            this.text = text;
+        MinimalBackButton(String label, Runnable action) {
+            this.label = label;
             this.action = action;
             setOpaque(false);
-            setFont(new Font("Arial", Font.PLAIN, 14));
+            setFont(pickTechFont(13, Font.BOLD));
             setCursor(new Cursor(Cursor.HAND_CURSOR));
-            setPreferredSize(new Dimension(120, 44));
-            setBorder(new EmptyBorder(16, 18, 0, 0));
+            setPreferredSize(new Dimension(150, 46));
+            setMaximumSize(new Dimension(160, 46));
 
             addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseEntered(MouseEvent e) {
-                    hover = true;
-                    repaint();
+                    hovering = true;
+                    streakStart = System.currentTimeMillis();
                 }
 
                 @Override
                 public void mouseExited(MouseEvent e) {
-                    hover = false;
-                    repaint();
+                    hovering = false;
+                    pressed = false;
                 }
 
                 @Override
                 public void mousePressed(MouseEvent e) {
-                    animatePress();
+                    pressed = true;
                 }
 
                 @Override
-                public void mouseClicked(MouseEvent e) {
-                    action.run();
+                public void mouseReleased(MouseEvent e) {
+                    boolean wasPressed = pressed;
+                    pressed = false;
+                    if (wasPressed && contains(e.getPoint())) action.run();
                 }
             });
-        }
 
-        private void animatePress() {
-            pressScale = 0.9f;
-            repaint();
-            if (pressTimer != null) pressTimer.stop();
-            pressTimer = new Timer(30, e -> {
-                pressScale += (1f - pressScale) * 0.4f;
-                if (Math.abs(1f - pressScale) < 0.01f) {
-                    pressScale = 1f;
-                    ((Timer) e.getSource()).stop();
-                }
+            animTimer = new Timer(16, e -> {
+                hoverT += ((hovering ? 1f : 0f) - hoverT) * 0.2f;
+                pressT += ((pressed ? 1f : 0f) - pressT) * 0.35f;
+                breathePhase += 0.03f;
                 repaint();
             });
-            pressTimer.start();
+            animTimer.start();
         }
 
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-            int shiftX = hover ? 5 : 0;
-            g2.translate(14 + shiftX, 26);
-            g2.scale(pressScale, pressScale);
+            int w = getWidth(), h = getHeight();
+            float scale = 1f - pressT * 0.035f;
+            g2.translate(w / 2.0, h / 2.0);
+            g2.scale(scale, scale);
+            g2.translate(-w / 2.0, -h / 2.0);
+
+            RoundRectangle2D shape = new RoundRectangle2D.Float(0, 0, w, h, 14, 14);
+            float breathe = 0.55f + 0.45f * (float) (0.5 + 0.5 * Math.sin(breathePhase));
+
+            g2.setColor(new Color(140, 226, 255, (int) (30 * breathe + 55 * hoverT)));
+            g2.fill(new RoundRectangle2D.Float(-3, -3, w + 6, h + 6, 18, 18));
+
+            g2.setColor(new Color(0, 0, 0, 90));
+            g2.fill(new RoundRectangle2D.Float(1, 3, w, h, 14, 14));
+
+            g2.setPaint(new GradientPaint(0, 0, GLASS_FILL_TOP, 0, h, GLASS_FILL_BOTTOM));
+            g2.fill(shape);
+
+            if (hovering && streakStart >= 0) {
+                long elapsed = System.currentTimeMillis() - streakStart;
+                float t = Math.min(1f, elapsed / 260f);
+                Shape oldClip = g2.getClip();
+                g2.clip(shape);
+                float sx = -h + t * (w + h * 2f);
+                int alpha = (int) (90 * (1f - t));
+                Polygon streak = new Polygon();
+                streak.addPoint((int) sx, -5);
+                streak.addPoint((int) (sx + h * 0.5f), -5);
+                streak.addPoint((int) (sx + h * 0.5f - h), h + 5);
+                streak.addPoint((int) (sx - h), h + 5);
+                g2.setColor(new Color(200, 240, 255, Math.max(0, alpha)));
+                g2.fill(streak);
+                g2.setClip(oldClip);
+            }
+
+            g2.setColor(new Color(160, 230, 255, (int) (90 + 110 * hoverT)));
+            g2.setStroke(new BasicStroke(1.3f));
+            g2.draw(shape);
 
             g2.setFont(getFont());
-            g2.setColor(hover ? TEXT_PRIMARY : TEXT_SECONDARY);
-            g2.drawString(text, 0, 0);
-
-            if (hover) {
-                int textWidth = g2.getFontMetrics().stringWidth(text);
-                g2.setColor(new Color(255, 255, 255, 160));
-                g2.drawLine(0, 5, textWidth, 5);
-            }
+            FontMetrics fm = g2.getFontMetrics();
+            String full = ARROW + " " + label;
+            int tx = (w - fm.stringWidth(full)) / 2;
+            int ty = (h + fm.getAscent()) / 2 - 3;
+            g2.setColor(new Color(0, 0, 0, 150));
+            g2.drawString(full, tx + 1, ty + 1);
+            g2.setColor(hovering ? C_CYAN_BRIGHT : C_WHITE);
+            g2.drawString(full, tx, ty);
 
             g2.dispose();
         }
     }
 
     // =========================================================
-    //  KOMPONEN KUSTOM: Tombol outline (aksi sekunder -- Shuffle)
+    //  TOMBOL OUTLINE CYAN (aksi sekunder — Shuffle)
     // =========================================================
     private static class OutlineButton extends JButton {
         private boolean hover = false;
         private float scale = 1f;
-        private Timer animTimer;
+        private float breathePhase = 0f;
+        private final Timer animTimer;
 
         OutlineButton(String text) {
             super(text);
-            setFont(new Font("Arial", Font.BOLD, 15));
+            setFont(pickTechFont(14, Font.BOLD));
             setFocusPainted(false);
             setContentAreaFilled(false);
             setBorderPainted(false);
             setOpaque(false);
             setCursor(new Cursor(Cursor.HAND_CURSOR));
-            setForeground(TEXT_PRIMARY);
+            setForeground(C_WHITE);
 
             addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseEntered(MouseEvent e) {
                     hover = true;
-                    repaint();
                 }
 
                 @Override
                 public void mouseExited(MouseEvent e) {
                     hover = false;
-                    repaint();
                 }
 
                 @Override
                 public void mousePressed(MouseEvent e) {
                     scale = 0.96f;
-                    repaint();
                 }
             });
 
             animTimer = new Timer(16, e -> {
                 scale += (1f - scale) * 0.25f;
+                breathePhase += 0.03f;
                 repaint();
             });
             animTimer.start();
@@ -644,130 +744,137 @@ public class TournamentBracketPanel extends JPanel {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            int w = getWidth();
-            int h = getHeight();
-
+            int w = getWidth(), h = getHeight();
             AffineTransform old = g2.getTransform();
             g2.translate(w / 2.0, h / 2.0);
             g2.scale(scale, scale);
             g2.translate(-w / 2.0, -h / 2.0);
 
-            g2.setColor(new Color(255, 255, 255, hover ? 26 : 12));
-            g2.fillRoundRect(0, 0, w, h, 12, 12);
-            g2.setColor(new Color(255, 255, 255, hover ? 190 : 130));
-            g2.setStroke(new BasicStroke(1.3f));
-            g2.drawRoundRect(1, 1, w - 2, h - 2, 12, 12);
+            RoundRectangle2D shape = new RoundRectangle2D.Float(0, 0, w, h, 12, 12);
+            float breathe = 0.55f + 0.45f * (float) (0.5 + 0.5 * Math.sin(breathePhase));
+
+            g2.setColor(new Color(140, 226, 255, hover ? 34 : 16));
+            g2.fill(shape);
+            g2.setColor(new Color(160, 230, 255, (int) ((hover ? 210 : 130) * breathe + (hover ? 40 : 0))));
+            g2.setStroke(new BasicStroke(1.4f));
+            g2.draw(shape);
 
             g2.setTransform(old);
             g2.dispose();
 
-            setForeground(TEXT_PRIMARY);
+            setForeground(hover ? C_CYAN_BRIGHT : C_WHITE);
             super.paintComponent(g);
         }
     }
 
     // =========================================================
-    //  KOMPONEN KUSTOM: Tombol utama (aksi primer -- Mulai Pertandingan)
+    //  TOMBOL CTA UTAMA — glass + energy sweep + breathing glow + partikel
+    //  (identik gaya StartButton pada InputTournamentPanel).
     // =========================================================
     private static class PrimaryButton extends JButton {
         private boolean hover = false;
-        private float scale = 1f;
-        private float breath = 0f;
-        private final List<float[]> ripples = new ArrayList<>();
-        private Timer animTimer;
+        private float pulsePhase = 0f;
+        private float hoverAnim = 0f;
+        private long streakStart = -1L;
+        private final List<float[]> particles = new ArrayList<>(); // {x, y, vy, life}
+        private final java.util.Random rng = new java.util.Random();
+        private final Timer fxTimer;
 
         PrimaryButton(String text) {
             super(text);
-            setFont(new Font("Arial", Font.BOLD, 16));
+            setFont(pickTechFont(15, Font.BOLD));
             setFocusPainted(false);
             setContentAreaFilled(false);
             setBorderPainted(false);
             setOpaque(false);
             setCursor(new Cursor(Cursor.HAND_CURSOR));
+            setForeground(new Color(4, 14, 18));
 
             addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseEntered(MouseEvent e) {
                     hover = true;
-                    repaint();
+                    streakStart = System.currentTimeMillis();
                 }
 
                 @Override
                 public void mouseExited(MouseEvent e) {
                     hover = false;
-                    repaint();
-                }
-
-                @Override
-                public void mousePressed(MouseEvent e) {
-                    scale = 0.95f;
-                    ripples.add(new float[]{e.getX(), e.getY(), 4f, 0.5f});
-                    repaint();
                 }
             });
 
-            animTimer = new Timer(16, e -> {
-                breath += 0.03f;
-                scale += (1f - scale) * 0.25f;
+            fxTimer = new Timer(16, e -> {
+                pulsePhase += 0.045f;
+                hoverAnim += ((hover ? 1f : 0f) - hoverAnim) * 0.18f;
 
-                java.util.Iterator<float[]> it = ripples.iterator();
+                if (hover && getWidth() > 0 && rng.nextFloat() < 0.35f) {
+                    particles.add(new float[]{rng.nextFloat() * getWidth(), getHeight() + 2, 0.6f + rng.nextFloat() * 0.8f, 1f});
+                }
+                java.util.Iterator<float[]> it = particles.iterator();
                 while (it.hasNext()) {
-                    float[] r = it.next();
-                    r[2] += 9f;
-                    r[3] -= 0.02f;
-                    if (r[3] <= 0f) it.remove();
+                    float[] p = it.next();
+                    p[1] -= p[2];
+                    p[3] -= 0.03f;
+                    if (p[3] <= 0f) it.remove();
                 }
                 repaint();
             });
-            animTimer.start();
+            fxTimer.start();
         }
 
         @Override
         protected void paintComponent(Graphics g) {
+            int w = getWidth(), h = getHeight();
+            if (w <= 0 || h <= 0) return;
+
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            int w = getWidth();
-            int h = getHeight();
-
-            float pulseGlow = 0.5f + 0.5f * (float) Math.sin(breath);
-            float hoverBoost = hover ? 1f : 0f;
-
-            g2.setColor(new Color(0, 0, 0, 90));
-            g2.fillRoundRect(0, 6, w, h, 14, 14);
-
-            int glowAlpha = (int) (16 + pulseGlow * 12 + hoverBoost * 24);
-            g2.setColor(new Color(255, 255, 255, Math.min(255, glowAlpha)));
-            g2.fillRoundRect(-6, -6, w + 12, h + 12, 18, 18);
-
-            AffineTransform old = g2.getTransform();
+            float scale = 1f + hoverAnim * 0.02f;
             g2.translate(w / 2.0, h / 2.0);
-            g2.scale(scale * (1f + hoverBoost * 0.02f), scale * (1f + hoverBoost * 0.02f));
+            g2.scale(scale, scale);
             g2.translate(-w / 2.0, -h / 2.0);
 
-            g2.setColor(hover ? Color.WHITE : new Color(232, 232, 232));
-            g2.fillRoundRect(0, 0, w, h, 14, 14);
+            RoundRectangle2D shape = new RoundRectangle2D.Float(0, 0, w, h, 12, 12);
+            float breathe = 0.6f + 0.4f * (float) (0.5 + 0.5 * Math.sin(pulsePhase));
+            int glowAlpha = (int) (70 * breathe + 80 * hoverAnim);
+            g2.setColor(new Color(140, 226, 255, glowAlpha));
+            g2.fill(new RoundRectangle2D.Float(-5, -5, w + 10, h + 10, 16, 16));
 
-            Shape oldClip = g2.getClip();
-            g2.clip(new RoundRectangle2D.Float(0, 0, w, h, 14, 14));
-            for (float[] r : ripples) {
-                g2.setColor(new Color(0, 0, 0, clampAlpha(r[3])));
-                g2.fillOval((int) (r[0] - r[2]), (int) (r[1] - r[2]), (int) (r[2] * 2), (int) (r[2] * 2));
+            g2.setPaint(hover
+                    ? new GradientPaint(0, 0, new Color(200, 244, 255), 0, h, new Color(120, 210, 235))
+                    : new GradientPaint(0, 0, new Color(170, 232, 255), 0, h, new Color(90, 185, 215)));
+            g2.fill(shape);
+
+            if (hover && streakStart >= 0) {
+                long elapsed = System.currentTimeMillis() - streakStart;
+                float t = Math.min(1f, elapsed / 260f);
+                Shape oldClip = g2.getClip();
+                g2.clip(shape);
+                float sx = -h + t * (w + h * 2f);
+                int alpha = (int) (110 * (1f - t));
+                Polygon streak = new Polygon();
+                streak.addPoint((int) sx, -5);
+                streak.addPoint((int) (sx + h * 0.5f), -5);
+                streak.addPoint((int) (sx + h * 0.5f - h), h + 5);
+                streak.addPoint((int) (sx - h), h + 5);
+                g2.setColor(new Color(255, 255, 255, Math.max(0, alpha)));
+                g2.fill(streak);
+
+                for (float[] p : particles) {
+                    g2.setColor(new Color(255, 255, 255, (int) (200 * p[3])));
+                    g2.fillOval((int) p[0], (int) p[1], 3, 3);
+                }
+                g2.setClip(oldClip);
             }
-            g2.setClip(oldClip);
-            g2.setTransform(old);
 
-            setForeground(new Color(10, 10, 10));
-            int textShift = hover ? 2 : 0;
-            Graphics textG = g2.create(textShift, 0, w, h);
-            super.paintComponent(textG);
-            textG.dispose();
-
+            g2.setStroke(new BasicStroke(1.5f));
+            g2.setColor(new Color(255, 255, 255, (int) (140 + 60 * hoverAnim)));
+            g2.draw(shape);
             g2.dispose();
-        }
 
-        private int clampAlpha(float a) {
-            return Math.max(0, Math.min(255, (int) (a * 255)));
+            setForeground(new Color(4, 14, 18));
+            super.paintComponent(g);
         }
     }
 }

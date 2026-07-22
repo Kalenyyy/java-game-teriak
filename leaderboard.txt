@@ -11,3 +11,5 @@ yamal,38
 mbappe,10
 ronaldono,33
 andam,54
+Pemain,65
+Pemain,27

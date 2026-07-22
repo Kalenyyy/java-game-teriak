@@ -454,7 +454,7 @@ public class GamePanel extends JPanel {
     }
 
     // =========================================================
-    //  SCORE POPUP (feedback saat skor selesai dihitung)
+    //  SCORE POPUP (feedback saat giliran selesai dihitung)
     // =========================================================
     private boolean scorePopupIsTop = true;
 
@@ -673,10 +673,17 @@ public class GamePanel extends JPanel {
         g2.translate(jx, jy);
 
         drawAmbientBackground(g2, w, h);
+        drawSpotlightBeams(g2, w, h);
+        drawHoloGrid(g2, w, h);
+        drawLightStreaks(g2, w, h);
+        drawConsoleFrame(g2, w, h);
+        drawFrequencyRadar(g2, w, h);
+        drawOperatorSilhouette(g2, w, h);
 
         drawHeaderText(g2, w);
         drawStatus(g2, w);
         drawQueueInfo(g2, w);
+        drawCornerHUDLabels(g2, w, h);
         drawLanes(g2, w, h);
 
         if (scorePopupText != null) {
@@ -736,6 +743,307 @@ public class GamePanel extends JPanel {
             g2.setColor(new Color(255, 255, 255, alpha));
             g2.fillOval((int) px, (int) py, (int) size, (int) size);
         }
+    }
+
+    // =========================================================================================
+    //  LAPISAN VISUAL BARU — "MILITARY AUDIO COMMAND CENTER" (murni presentasi/dekorasi).
+    //  Semua method di bawah ini TIDAK menyentuh/READ state gameplay apapun selain yang sudah
+    //  publicly dibaca oleh method render lain (animSeconds, shakeMagnitude, dsb bila perlu),
+    //  dan TIDAK mengubah fungsi-fungsi yang sudah ada. Hanya dipanggil tambahan dari
+    //  paintComponent() sebagai layer dekoratif baru, di atas/di bawah layer lama.
+    // =========================================================================================
+
+    /** Grid holografik tipis menutupi seluruh arena -- kesan lab audio militer/esports command center. */
+    private void drawHoloGrid(Graphics2D g2, int w, int h) {
+        double t = animSeconds();
+        float drift = (float) (Math.sin(t * 0.06) * 6.0);
+
+        g2.setStroke(new BasicStroke(1f));
+        int step = 46;
+
+        g2.setColor(new Color(255, 255, 255, 9));
+        for (int x = (int) (-step + drift); x < w + step; x += step) {
+            g2.drawLine(x, 0, x, h);
+        }
+        for (int y = (int) (-step + drift * 0.4f); y < h + step; y += step) {
+            g2.drawLine(0, y, w, y);
+        }
+
+        // Garis penanda lebih terang setiap beberapa sel (kesan blueprint teknis, tetap monokrom)
+        g2.setColor(new Color(255, 255, 255, 16));
+        int bigStep = step * 4;
+        for (int x = (int) (-bigStep + drift); x < w + bigStep; x += bigStep) {
+            g2.drawLine(x, 0, x, h);
+        }
+    }
+
+    /** Bingkai console holografik besar di belakang lajur -- panel kaca lebar dengan sudut siku teknis. */
+    private void drawConsoleFrame(Graphics2D g2, int w, int h) {
+        int margin = 34;
+        int px = margin;
+        int py = (int) (h * 0.20);
+        int pw = w - margin * 2;
+        int ph = (int) (h * 0.56);
+        int arc = 26;
+
+        GradientPaint glass = new GradientPaint(
+                px, py, new Color(255, 255, 255, 8),
+                px, py + ph, new Color(255, 255, 255, 1)
+        );
+        g2.setPaint(glass);
+        g2.fillRoundRect(px, py, pw, ph, arc, arc);
+        g2.setPaint(null);
+
+        g2.setColor(new Color(255, 255, 255, 26));
+        g2.setStroke(new BasicStroke(1.4f));
+        g2.drawRoundRect(px, py, pw, ph, arc, arc);
+
+        // Corner brackets teknis (gaya HUD militer) di keempat sudut console
+        int bl = 22;
+        g2.setColor(new Color(255, 255, 255, 90));
+        g2.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER));
+        drawCornerBracket(g2, px, py, bl, true, true);
+        drawCornerBracket(g2, px + pw, py, bl, false, true);
+        drawCornerBracket(g2, px, py + ph, bl, true, false);
+        drawCornerBracket(g2, px + pw, py + ph, bl, false, false);
+    }
+
+    private void drawCornerBracket(Graphics2D g2, int x, int y, int len, boolean right, boolean down) {
+        int dx = right ? len : -len;
+        int dy = down ? len : -len;
+        g2.drawLine(x, y, x + dx, y);
+        g2.drawLine(x, y, x, y + dy);
+    }
+
+    /** Label-label teks HUD ala sistem militer di pojok layar (ONLINE, SIGNAL DETECTED, dsb). */
+    private void drawCornerHUDLabels(Graphics2D g2, int w, int h) {
+        double t = animSeconds();
+        boolean blink = ((int) (t * 2)) % 2 == 0;
+
+        Font hudFont = new Font("Consolas", Font.PLAIN, 11);
+        if (!java.util.Arrays.asList(GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()).contains("Consolas")) {
+            hudFont = new Font("Monospaced", Font.PLAIN, 11);
+        }
+        g2.setFont(hudFont);
+
+        // Kiri atas: status sistem
+        drawHudLine(g2, 18, h * 0.24f, "GAME PANEL : ONLINE", C_MID_GRAY);
+        drawHudLine(g2, 18, h * 0.24f + 15, "AUDIO SYSTEM READY", C_DIM_GRAY);
+        drawHudLine(g2, 18, h * 0.24f + 30, micActive ? "MIC LINK : ESTABLISHED" : "MIC LINK : STANDBY", micActive ? C_LIGHT_GRAY : C_DIM_GRAY);
+
+        // Kanan atas: status sinyal (berkedip halus saat listening)
+        String sigText = listening ? "SIGNAL DETECTED" : "VOICE ANALYZER";
+        Color sigColor = listening && blink ? C_SOFT_WHITE : C_MID_GRAY;
+        drawHudLineRight(g2, w - 18, h * 0.24f, sigText, sigColor);
+        drawHudLineRight(g2, w - 18, h * 0.24f + 15, "DECIBEL SCANNER", C_DIM_GRAY);
+        drawHudLineRight(g2, w - 18, h * 0.24f + 30, listening ? "INPUT ACTIVE" : "INPUT IDLE", listening ? C_LIGHT_GRAY : C_DIM_GRAY);
+
+        // Bawah kiri kecil: id unit / kode arena, murni dekoratif
+        g2.setFont(hudFont.deriveFont(9f));
+        g2.setColor(C_DIM_GRAY);
+        g2.drawString("UNIT-ADT // ARENA-07", 18, h * 0.78f);
+    }
+
+    private void drawHudLine(Graphics2D g2, float x, float y, String text, Color color) {
+        g2.setColor(new Color(0, 0, 0, 140));
+        g2.drawString(text, x + 1, y + 1);
+        g2.setColor(color);
+        g2.drawString(text, x, y);
+    }
+
+    private void drawHudLineRight(Graphics2D g2, float xRight, float y, String text, Color color) {
+        FontMetrics fm = g2.getFontMetrics();
+        float x = xRight - fm.stringWidth(text);
+        drawHudLine(g2, x, y, text, color);
+    }
+
+    /** Radar spektrum frekuensi kecil di pojok kanan atas -- dekorasi teknis, monokrom. */
+    private void drawFrequencyRadar(Graphics2D g2, int w, int h) {
+        int r = 34;
+        int cx = w - 64;
+        int cy = (int) (h * 0.24f) + 56;
+
+        g2.setColor(new Color(255, 255, 255, 14));
+        g2.setStroke(new BasicStroke(1f));
+        g2.drawOval(cx - r, cy - r, r * 2, r * 2);
+        g2.drawOval(cx - r / 2, cy - r / 2, r, r);
+        g2.drawLine(cx - r, cy, cx + r, cy);
+        g2.drawLine(cx, cy - r, cx, cy + r);
+
+        // Garis sapuan radar berputar pelan
+        double sweep = animSeconds() * 1.1;
+        int sx = (int) (cx + Math.cos(sweep) * r);
+        int sy = (int) (cy + Math.sin(sweep) * r);
+        g2.setColor(new Color(255, 255, 255, 60));
+        g2.setStroke(new BasicStroke(1.4f));
+        g2.drawLine(cx, cy, sx, sy);
+
+        // Titik-titik amplitudo kecil berdasarkan skor aktif (murni visual, tidak mengubah state)
+        double activeNorm = listening ? Math.max(liveScoreTop, liveScoreBottom) / 100.0 : 0.0;
+        int dots = 8;
+        for (int i = 0; i < dots; i++) {
+            double a = (Math.PI * 2 / dots) * i;
+            double amp = r * (0.3 + 0.7 * activeNorm) * (0.6 + 0.4 * Math.sin(sweep * 2 + i));
+            int dx = (int) (cx + Math.cos(a) * amp);
+            int dy = (int) (cy + Math.sin(a) * amp);
+            g2.setColor(new Color(255, 255, 255, 100));
+            g2.fillOval(dx - 2, dy - 2, 4, 4);
+        }
+    }
+
+    /** Sorotan spotlight silver dari atas -- pencahayaan sinematik AAA, tetap grayscale. */
+    private void drawSpotlightBeams(Graphics2D g2, int w, int h) {
+        Composite old = g2.getComposite();
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.5f));
+
+        double t = animSeconds();
+        drawSingleBeam(g2, w * (0.28f + 0.02f * (float) Math.sin(t * 0.2)), w, h);
+        drawSingleBeam(g2, w * (0.72f + 0.02f * (float) Math.cos(t * 0.17)), w, h);
+
+        g2.setComposite(old);
+    }
+
+    private void drawSingleBeam(Graphics2D g2, float topX, int w, int h) {
+        float bottomSpread = w * 0.16f;
+        Path2D beam = new Path2D.Float();
+        beam.moveTo(topX - 6, -10);
+        beam.lineTo(topX + 6, -10);
+        beam.lineTo(topX + bottomSpread, h * 0.55f);
+        beam.lineTo(topX - bottomSpread, h * 0.55f);
+        beam.closePath();
+
+        Paint oldPaint = g2.getPaint();
+        GradientPaint beamPaint = new GradientPaint(
+                0, -10, new Color(255, 255, 255, 30),
+                0, h * 0.55f, new Color(255, 255, 255, 0)
+        );
+        g2.setPaint(beamPaint);
+        g2.fill(beam);
+        g2.setPaint(oldPaint);
+    }
+
+    /** Garis-garis kilau metalik tipis melintas perlahan -- aksen "metallic light streaks". */
+    private void drawLightStreaks(Graphics2D g2, int w, int h) {
+        double t = animSeconds();
+        g2.setStroke(new BasicStroke(1.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        for (int i = 0; i < 4; i++) {
+            double phase = t * (0.09 + i * 0.015) + i * 1.7;
+            float y = (float) (h * (0.15 + 0.6 * ((Math.sin(phase) + 1) / 2.0)));
+            float len = w * (0.10f + i * 0.03f);
+            float x = (float) ((Math.sin(phase * 1.3 + i) + 1) / 2.0) * w;
+            int alpha = 12 + i * 4;
+            g2.setColor(new Color(255, 255, 255, alpha));
+            g2.drawLine((int) (x - len / 2), (int) y, (int) (x + len / 2), (int) y);
+        }
+    }
+
+    /** Siluet operator futuristik di sisi kiri layar (tampak samping, wajah tersamar bayangan). */
+    private void drawOperatorSilhouette(Graphics2D g2, int w, int h) {
+        int baseX = 40;
+        int baseY = (int) (h * 0.88);
+        float breathe = (float) Math.sin(animSeconds() * 1.6) * 1.6f;
+        boolean gesture = listening;
+        float armLift = gesture ? 14f : 4f + (float) Math.sin(animSeconds() * 1.2) * 2f;
+
+        Composite oldComposite = g2.getComposite();
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.85f));
+
+        // Bayangan lantai
+        g2.setColor(new Color(0, 0, 0, 100));
+        g2.fillOval(baseX - 28, baseY + 2, 96, 14);
+
+        // Kaki
+        g2.setColor(C_DARK_GRAY);
+        g2.setStroke(new BasicStroke(10f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.drawLine(baseX, baseY - 6, baseX - 6, baseY - 60);
+        g2.drawLine(baseX + 18, baseY - 6, baseX + 14, baseY - 62);
+
+        // Torso (mantel/armor tinggi, kerah tegak)
+        GeneralPath torso = new GeneralPath();
+        int ty = (int) (baseY - 60 + breathe);
+        torso.moveTo(baseX - 20, ty);
+        torso.curveTo(baseX - 26, ty - 40, baseX - 16, ty - 92, baseX - 2, ty - 108);
+        torso.lineTo(baseX + 26, ty - 108);
+        torso.curveTo(baseX + 40, ty - 90, baseX + 42, ty - 40, baseX + 34, ty);
+        torso.closePath();
+
+        GradientPaint torsoPaint = new GradientPaint(
+                baseX - 26, ty - 108, new Color(70, 70, 74),
+                baseX + 42, ty, new Color(18, 18, 20)
+        );
+        g2.setPaint(torsoPaint);
+        g2.fill(torso);
+        g2.setPaint(null);
+        g2.setColor(new Color(255, 255, 255, 40));
+        g2.setStroke(new BasicStroke(1.2f));
+        g2.draw(torso);
+
+        // Kerah tinggi (high collar)
+        g2.setColor(new Color(20, 20, 22));
+        g2.fillRoundRect(baseX - 4, ty - 118, 30, 20, 8, 8);
+        g2.setColor(new Color(255, 255, 255, 30));
+        g2.drawRoundRect(baseX - 4, ty - 118, 30, 20, 8, 8);
+
+        // Bahu mekanis (shoulder piece) kanan, sisi menghadap console
+        g2.setColor(new Color(150, 150, 154));
+        g2.fillRoundRect(baseX + 14, ty - 104, 30, 18, 10, 10);
+        g2.setColor(new Color(60, 60, 64));
+        g2.drawRoundRect(baseX + 14, ty - 104, 30, 18, 10, 10);
+        g2.setColor(new Color(255, 255, 255, 60));
+        g2.fillOval(baseX + 34, ty - 100, 5, 5); // sendi kecil / implant cybernetic
+
+        // Lengan terangkat mengoperasikan console (gesture dinamis)
+        int shoulderX = baseX + 40;
+        int shoulderY = (int) (ty - 96);
+        int elbowX = (int) (shoulderX + 34);
+        int elbowY = (int) (shoulderY - 6 - armLift * 0.4f);
+        int handX = (int) (elbowX + 30);
+        int handY = (int) (elbowY - 8 - armLift);
+
+        g2.setColor(C_MID_GRAY);
+        g2.setStroke(new BasicStroke(9f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.drawLine(shoulderX, shoulderY, elbowX, elbowY);
+        g2.setColor(C_LIGHT_GRAY);
+        g2.setStroke(new BasicStroke(8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.drawLine(elbowX, elbowY, handX, handY);
+
+        // Sarung tangan futuristik (telapak di console)
+        g2.setColor(new Color(230, 230, 232));
+        g2.fillOval(handX - 7, handY - 7, 15, 15);
+        g2.setColor(new Color(40, 40, 42));
+        g2.drawOval(handX - 7, handY - 7, 15, 15);
+
+        // Kepala (profil samping, wajah tersamar bayangan penuh)
+        int headCx = baseX + 8;
+        int headCy = ty - 128;
+        int headR = 15;
+        GeneralPath headProfile = new GeneralPath();
+        headProfile.moveTo(headCx - headR, headCy);
+        headProfile.curveTo(headCx - headR, headCy - headR * 1.15, headCx + headR * 0.4, headCy - headR * 1.2, headCx + headR * 0.9, headCy - headR * 0.5);
+        headProfile.curveTo(headCx + headR * 1.15, headCy - headR * 0.05, headCx + headR * 0.95, headCy + headR * 0.55, headCx + headR * 0.55, headCy + headR * 0.85);
+        headProfile.curveTo(headCx + headR * 0.15, headCy + headR * 1.05, headCx - headR * 0.6, headCy + headR * 0.7, headCx - headR, headCy);
+        headProfile.closePath();
+
+        g2.setColor(new Color(10, 10, 11));
+        g2.fill(headProfile);
+        g2.setColor(new Color(255, 255, 255, 35));
+        g2.setStroke(new BasicStroke(1f));
+        g2.draw(headProfile);
+
+        // Rim-light tipis di garis rahang/kepala agar tetap terlihat sebagai siluet premium, bukan flat hitam
+        Shape oldClip = g2.getClip();
+        g2.clip(headProfile);
+        g2.setColor(new Color(255, 255, 255, 50));
+        g2.setStroke(new BasicStroke(1.6f));
+        g2.drawArc(headCx - headR, headCy - headR, headR * 2, headR * 2, 250, 60);
+        g2.setClip(oldClip);
+
+        // Implant cybernetic kecil (garis tipis menyala redup di pelipis)
+        g2.setColor(new Color(255, 255, 255, gesture ? 90 : 45));
+        g2.setStroke(new BasicStroke(1.2f));
+        g2.drawLine(headCx + 2, headCy - 2, headCx + 10, headCy - 4);
+
+        g2.setComposite(oldComposite);
     }
 
     /** Vignette halus di tepi layar agar fokus tetap ke tengah panggung. */
