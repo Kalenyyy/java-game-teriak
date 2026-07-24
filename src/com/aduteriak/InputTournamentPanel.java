@@ -927,13 +927,23 @@ public class InputTournamentPanel extends JPanel {
         divider.setAlignmentX(Component.CENTER_ALIGNMENT);
         divider.setMaximumSize(new Dimension(4000, 18));
         panel.add(divider);
-        panel.add(Box.createRigidArea(new Dimension(0, 14)));
+        panel.add(Box.createRigidArea(new Dimension(0, 5)));
+
+        // --- TARO DI SINI: LABEL ERROR UNTUK TURNAMEN ---
+        MonoLabel errorLabel = new MonoLabel("", new Color(255, 100, 100), new Color(255, 100, 100), false, 1.2f);
+        errorLabel.setFont(pickTechFont(11, Font.ITALIC));
+        errorLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        this.putClientProperty("errorLabel", errorLabel); // Simpan agar bisa diakses di startTournament
+        panel.add(errorLabel);
+        // -----------------------------------------------
+
+        panel.add(Box.createRigidArea(new Dimension(0, 10)));
 
         StartButton btnStart = new StartButton("\u25B8  INITIALIZE TOURNAMENT");
         btnStart.setAlignmentX(Component.CENTER_ALIGNMENT);
         btnStart.setMaximumSize(new Dimension(4000, 56));
         btnStart.setPreferredSize(new Dimension(100, 56));
-        btnStart.addActionListener(e -> startTournament()); // logika sama seperti versi asli
+        btnStart.addActionListener(e -> startTournament());
 
         panel.add(btnStart);
         return panel;
@@ -941,15 +951,38 @@ public class InputTournamentPanel extends JPanel {
 
     // Logika sama persis seperti versi asli, tidak diubah sedikit pun
     private void startTournament() {
+        MonoLabel errorLabel = (MonoLabel) getClientProperty("errorLabel");
+
+        // 1. Validasi: Cek apakah ada yang kosong atau masih nama default
+        for (int i = 0; i < nameFields.size(); i++) {
+            String name = nameFields.get(i).getText().trim();
+            // Cek kosong atau masih "Pemain 1", "Pemain 2", dst
+            if (name.isEmpty() || name.equalsIgnoreCase("Pemain " + (i + 1))) {
+                errorLabel.setText("! ERROR: SEMUA NAMA PEMAIN HARUS DIISI");
+                return; // Berhenti
+            }
+        }
+
+        // 2. Validasi: Cek apakah ada nama yang kembar (duplikat)
+        for (int i = 0; i < nameFields.size(); i++) {
+            for (int j = i + 1; j < nameFields.size(); j++) {
+                if (nameFields.get(i).getText().trim().equalsIgnoreCase(nameFields.get(j).getText().trim())) {
+                    errorLabel.setText("! ERROR: TERDETEKSI NAMA GANDA (PEMAIN " + (i+1) + " & " + (j+1) + ")");
+                    return; // Berhenti
+                }
+            }
+        }
+
+        // Jika semua OK, lanjut ke Bracket
+        errorLabel.setText("");
         GameState.reset();
         GameState.isTournamentMode = true;
 
         for (JTextField f : nameFields) {
-            GameState.allPlayers.add(new Player(f.getText()));
+            GameState.allPlayers.add(new Player(f.getText().trim()));
         }
 
         GameState.tournamentRoot = TournamentManager.buildTree(new ArrayList<>(GameState.allPlayers));
-
         parent.showBracket();
     }
 

@@ -271,9 +271,7 @@ public class Input2PPanel extends JPanel {
         sub.setFont(pickTechFont(12, Font.PLAIN));
         card.add(sub, gbc);
 
-        // ---- Input Pemain 1 & Pemain 2: dibangun lewat helper yang sama persis,
-        //      sehingga ukuran, styling, spacing, animasi, glass, border, tipografi,
-        //      dan placeholder-nya identik antara kedua field. ----
+        // Input Pemain 1
         DuelField field1 = addPlayerRow(card, gbc, row, "PLAYER 1", "Pemain 1");
         row += 2;
         this.putClientProperty("field1", field1);
@@ -283,6 +281,7 @@ public class Input2PPanel extends JPanel {
         VsBadge vsBadge = new VsBadge();
         card.add(vsBadge, gbc);
 
+        // Input Pemain 2
         DuelField field2 = addPlayerRow(card, gbc, row, "PLAYER 2", "Pemain 2");
         row += 2;
         this.putClientProperty("field2", field2);
@@ -293,6 +292,16 @@ public class Input2PPanel extends JPanel {
         JPanel flexSpacer = new JPanel();
         flexSpacer.setOpaque(false);
         card.add(flexSpacer, gbc);
+
+        // --- TARO DI SINI: LABEL ERROR NYA ---
+        gbc.gridy = row++;
+        gbc.weighty = 0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(-15, 26, 10, 26); // Insets minus biar mepet tombol
+        MonoLabel errorLabel = new MonoLabel("", new Color(255, 80, 80), new Color(255, 80, 80), false, 1.2f);
+        errorLabel.setFont(pickTechFont(11, Font.ITALIC));
+        card.add(errorLabel, gbc);
+        // -------------------------------------
 
         gbc.gridy = row;
         gbc.weighty = 0;
@@ -306,9 +315,25 @@ public class Input2PPanel extends JPanel {
 
             String name1 = f1.getText().trim();
             String name2 = f2.getText().trim();
-            if (name1.isEmpty() || name1.equals(f1.getPlaceholder())) name1 = "Pemain 1";
-            if (name2.isEmpty() || name2.equals(f2.getPlaceholder())) name2 = "Pemain 2";
 
+            // LOGIKA VALIDASI:
+            // 1. Cek Kosong atau masih nama default
+            boolean p1Invalid = name1.isEmpty() || name1.equalsIgnoreCase(f1.getPlaceholder());
+            boolean p2Invalid = name2.isEmpty() || name2.equalsIgnoreCase(f2.getPlaceholder());
+
+            if (p1Invalid || p2Invalid) {
+                errorLabel.setText("! ERROR: SEMUA NAMA HARUS DIISI");
+                return; // STOP, jangan lanjut
+            }
+
+            // 2. Cek kalau namanya sama
+            if (name1.equalsIgnoreCase(name2)) {
+                errorLabel.setText("! ERROR: NAMA PEMAIN TIDAK BOLEH SAMA");
+                return; // STOP, jangan lanjut
+            }
+
+            // Jika lolos semua validasi:
+            errorLabel.setText(""); // Bersihkan error
             GameState.reset();
 
             Player p1 = new Player(name1);

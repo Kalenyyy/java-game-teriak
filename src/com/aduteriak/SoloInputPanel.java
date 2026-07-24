@@ -244,6 +244,12 @@ public class SoloInputPanel extends JPanel {
         card.add(field, gbc);
         this.putClientProperty("field", field);
 
+        TechLabel errorLabel = new TechLabel("", HOLO_MAGENTA, HOLO_MAGENTA, false, 1.5f);
+        errorLabel.setFont(pickTechFont(11, Font.ITALIC));
+        gbc.gridy = row++;
+        gbc.insets = new Insets(-15, 26, 10, 26); // Insets minus supaya rapat ke input field
+        card.add(errorLabel, gbc);
+
         gbc.gridy = row++;
         gbc.insets = new Insets(0, 26, 26, 26);
         TechLabel modeRow = new TechLabel("SELECT MODE : SOLO", HOLO_CYAN_DIM, HOLO_CYAN_DIM, false, 2.2f);
@@ -266,9 +272,19 @@ public class SoloInputPanel extends JPanel {
         btnStart.addActionListener(e -> {
             HoloTextField f = (HoloTextField) getClientProperty("field");
             String name = f.getText().trim();
-            if (name.isEmpty() || name.equals("Pemain")) {
-                name = "Pemain";
+
+            // Validasi: Cek jika kosong atau masih nama default
+            if (name.isEmpty() || name.equalsIgnoreCase("Pemain")) {
+                // Tampilkan pesan error di label yang tadi dibuat
+                errorLabel.setText("! ERROR: NAMA TIDAK BOLEH KOSONG");
+
+                // Efek visual: Buat field jadi warna magenta sebentar
+                f.requestFocus();
+                return;
             }
+
+            // Jika valid, hapus pesan error dan lanjut
+            errorLabel.setText("");
 
             GameState.reset();
             GameState.isSoloMode = true;
