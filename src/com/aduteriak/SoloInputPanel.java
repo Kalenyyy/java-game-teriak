@@ -274,7 +274,7 @@ public class SoloInputPanel extends JPanel {
             String name = f.getText().trim();
 
             // Validasi: Cek jika kosong atau masih nama default
-            if (name.isEmpty() || name.equalsIgnoreCase("Pemain")) {
+            if (name.isEmpty()) {
                 // Tampilkan pesan error di label yang tadi dibuat
                 errorLabel.setText("! ERROR: NAMA TIDAK BOLEH KOSONG");
 
